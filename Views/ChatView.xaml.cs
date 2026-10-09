@@ -21,6 +21,24 @@ public partial class ChatView : UserControl
     private readonly HashSet<ChatMessageViewModel> _subscribedMessages = [];
     private double _smoothScrollTarget;
 
+    private void ChatLayout_OnSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // Use the available content area in WPF units, so this also works at high DPI.
+        var compact = e.NewSize.Width < 760 || e.NewSize.Height < 600;
+        var inset = compact ? 16 : 28;
+        ConversationHeader.Padding = new Thickness(inset, compact ? 12 : 18, inset, 14);
+        ComposerArea.Margin = new Thickness(inset, 8, inset, compact ? 10 : 20);
+        ComposerInputBox.MaxHeight = Math.Clamp(e.NewSize.Height * 0.22, 72, 160);
+    }
+
+    private void ConversationMore_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { ContextMenu: { } menu } button) return;
+        menu.PlacementTarget = button;
+        menu.Placement = PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
     public ChatView()
     {
         InitializeComponent();
@@ -79,6 +97,11 @@ public partial class ChatView : UserControl
     private void StorySummaryPopup_OnClosed(object sender, EventArgs e)
     {
         if (DataContext is ChatViewModel viewModel) viewModel.IsStorySummaryOpen = false;
+    }
+
+    private void MemoryPopup_OnClosed(object sender, EventArgs e)
+    {
+        if (DataContext is ChatViewModel viewModel) viewModel.IsMemoryOpen = false;
     }
 
     private void OnJumpToMessageRequested(long messageId)

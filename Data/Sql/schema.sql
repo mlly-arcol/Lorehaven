@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS ChatSessions (
     Summary TEXT NOT NULL DEFAULT '',
     SummaryCoveredCount INTEGER NOT NULL DEFAULT 0,
     SummaryIsManual INTEGER NOT NULL DEFAULT 0,
+    MemoryCoveredCount INTEGER NOT NULL DEFAULT 0,
     GroupName TEXT NOT NULL DEFAULT '',
     IsPinned INTEGER NOT NULL DEFAULT 0,
     CreatedAt TEXT NOT NULL,
@@ -160,6 +161,16 @@ CREATE TABLE IF NOT EXISTS CharacterStatuses (
     FOREIGN KEY (SourceMessageId) REFERENCES ChatMessages(Id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS IX_CharacterStatuses_CharacterId ON CharacterStatuses(CharacterId);
+-- Long-term facts a character remembers across conversations, distilled from the chat history.
+CREATE TABLE IF NOT EXISTS CharacterMemories (
+    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+    CharacterId INTEGER NOT NULL,
+    Content TEXT NOT NULL,
+    CreatedAt TEXT NOT NULL,
+    UpdatedAt TEXT NOT NULL,
+    FOREIGN KEY (CharacterId) REFERENCES Characters(Id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS IX_CharacterMemories_CharacterId ON CharacterMemories(CharacterId);
 CREATE TABLE IF NOT EXISTS RegexScripts (
     Id INTEGER PRIMARY KEY AUTOINCREMENT,
     Name TEXT NOT NULL,

@@ -198,8 +198,11 @@ public sealed class ChatServiceTests
         var promptService = new PromptService(prompts, characters, sessions, knowledge);
         var attachmentService = new AttachmentService(attachments, NullLogger<AttachmentService>.Instance);
         var summary = new ConversationSummaryService(messages, sessions);
+        var memory = new CharacterMemoryService(
+            new CharacterMemoryRepository(factory), messages, sessions, characters,
+            settings, provider, NullLogger<CharacterMemoryService>.Instance);
         return (new ChatService(
-            sessions, messages, swipes, attachments, attachmentService, summary, characters,
+            sessions, messages, swipes, attachments, attachmentService, summary, memory, characters,
             promptService,
             new RegexScriptService(new RegexScriptRepository(factory), NullLogger<RegexScriptService>.Instance),
             settings, provider, NullLogger<ChatService>.Instance), messages);

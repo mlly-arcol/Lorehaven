@@ -22,6 +22,7 @@ public partial class ChatViewModel(
     ReplySuggestionService replySuggestionService,
     PluginService pluginService,
     TrayService trayService,
+    CharacterMemoryService memoryService,
     ILogger<ChatViewModel> logger) : ObservableObject
 {
     public ObservableCollection<ChatMessageViewModel> Messages { get; } = [];
@@ -873,6 +874,75 @@ public partial class ChatViewModel(
             ? $"手动编辑中，自动整理已暂停（已覆盖最早 {StorySummaryCoveredCount} 条消息）"
             : $"自动整理，已覆盖最早 {StorySummaryCoveredCount} 条消息";
 
+    public ObservableCollection<CharacterMemory> CharacterMemories { get; } = [];
+    [ObservableProperty] private bool _isMemoryOpen;
+    [ObservableProperty] private bool _hasMemoryTarget;
+    [ObservableProperty] private bool _isExtractingMemory;
+    [ObservableProperty] private bool _hasMemories;
+    [ObservableProperty] private string _memoryStatus = string.Empty;
+    [ObservableProperty] private string _newMemoryText = string.Empty;
+    public bool CanExtractMemory => !IsExtractingMemory;
+    partial void OnIsExtractingMemoryChanged(bool value) => OnPropertyChanged(nameof(CanExtractMemory));
+
+    [RelayCommand]
+    private async Task OpenMemoryAsync()
+    {
+        if (_session?.CharacterId is not long characterId) return;
+        await ReloadMemoriesAsync(characterId);
+        MemoryStatus = string.Empty;
+        IsMemoryOpen = true;
+    }
+
+    [RelayCommand]
+    private async Task AddMemoryAsync()
+    {
+        if (_session?.CharacterId is not long characterId) return;
+        try
+        {
+            await memoryService.AddManualAsync(characterId, NewMemoryText);
+            NewMemoryText = string.Empty;
+            await ReloadMemoriesAsync(characterId);
+            MemoryStatus = "已添加，下次请求起会随对话一起发送。";
+        }
+        catch (InvalidOperationException ex)
+        {
+            MemoryStatus = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task DeleteMemoryAsync(CharacterMemory? memory)
+    {
+        if (memory is null) return;
+        await memoryService.DeleteAsync(memory.Id);
+        CharacterMemories.Remove(memory);
+        HasMemories = CharacterMemories.Count > 0;
+    }
+
+    [RelayCommand]
+    private async Task ExtractMemoryNowAsync()
+    {
+        if (_session?.CharacterId is not long characterId || IsExtractingMemory) return;
+        IsExtractingMemory = true;
+        MemoryStatus = "正在从对话中提炼记忆…";
+        try
+        {
+            var before = CharacterMemories.Count;
+            await memoryService.ExtractIfNeededAsync(_session, force: true);
+            await ReloadMemoriesAsync(characterId);
+            var added = CharacterMemories.Count - before;
+            MemoryStatus = added > 0 ? $"新增 {added} 条记忆。" : "没有提炼出新的记忆。";
+        }
+        finally { IsExtractingMemory = false; }
+    }
+
+    private async Task ReloadMemoriesAsync(long characterId)
+    {
+        CharacterMemories.Clear();
+        foreach (var memory in await memoryService.GetAsync(characterId)) CharacterMemories.Add(memory);
+        HasMemories = CharacterMemories.Count > 0;
+    }
+
     [RelayCommand]
     private async Task SwipeLeftAsync(ChatMessageViewModel? message)
     {
@@ -1140,6 +1210,11 @@ public partial class ChatViewModel(
         StorySummaryStatus = string.Empty;
         IsStorySummaryOpen = false;
         IsStatsOpen = false;
+        IsMemoryOpen = false;
+        MemoryStatus = string.Empty;
+        CharacterMemories.Clear();
+        HasMemories = false;
+        HasMemoryTarget = session is { IsGroupChat: false, CharacterId: not null };
         var draft = _drafts.OnLoadFinished(
             session.Id, composerAtLoadStart, DraftStore.Capture(InputText, PendingImagePaths));
         InputText = draft.Text;

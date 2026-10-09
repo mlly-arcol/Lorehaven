@@ -61,6 +61,25 @@ public partial class App : Application
                 window.Show(); window.WindowState = WindowState.Normal; window.Activate();
             });
             window.Show();
+            var hotkeys = _services.GetRequiredService<GlobalHotkeyService>();
+            hotkeys.Attach(
+                window,
+                toggleWindow: () =>
+                {
+                    if (!window.IsVisible || window.WindowState == WindowState.Minimized)
+                    {
+                        window.Show(); window.WindowState = WindowState.Normal; window.Activate();
+                    }
+                    else if (window.IsActive) window.Hide();
+                    else window.Activate();
+                },
+                bossKey: () => window.Hide());
+            hotkeys.Apply(storedSettings.HotkeysEnabled, storedSettings.ToggleWindowHotkey, storedSettings.BossKeyHotkey);
+            _services.GetRequiredService<SettingsViewModel>().Saved += async () =>
+            {
+                var current = await _services.GetRequiredService<SettingsService>().LoadAsync();
+                hotkeys.Apply(current.HotkeysEnabled, current.ToggleWindowHotkey, current.BossKeyHotkey);
+            };
         }
         catch (Exception ex)
         {
@@ -91,6 +110,7 @@ public partial class App : Application
         services.AddSingleton<KnowledgeRepository>();
         services.AddSingleton<ChatAttachmentRepository>();
         services.AddSingleton<CharacterStatusRepository>();
+        services.AddSingleton<CharacterMemoryRepository>();
         services.AddSingleton<RegexScriptRepository>();
         services.AddSingleton<ISecretProtector, DpapiSecretProtector>();
         services.AddSingleton<SettingsService>();
@@ -106,6 +126,8 @@ public partial class App : Application
         services.AddSingleton<RegexScriptService>();
         services.AddSingleton<PromptResourceService>();
         services.AddSingleton<ReplySuggestionService>();
+        services.AddSingleton<CharacterMemoryService>();
+        services.AddSingleton<GlobalHotkeyService>();
         services.AddSingleton<TrayService>();
         services.AddHttpClient<OpenAICompatibleProvider>(client => client.Timeout = Timeout.InfiniteTimeSpan);
         services.AddHttpClient<ClaudeProvider>(client => client.Timeout = Timeout.InfiniteTimeSpan);

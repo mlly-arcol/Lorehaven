@@ -12,9 +12,9 @@
                 <TranslateTransform x:Name="StartupTranslate" Y="10"/>
             </TransformGroup>
         </Grid.RenderTransform>
-        <Grid.ColumnDefinitions><ColumnDefinition Width="250" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+        <Grid.ColumnDefinitions><ColumnDefinition x:Name="SidebarColumn" Width="220" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
         <Border Grid.Column="0" Background="{StaticResource SidebarBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
-            <DockPanel Margin="14,18">
+            <DockPanel Margin="12,18" LastChildFill="False">
                 <StackPanel DockPanel.Dock="Top">
                     <Grid Margin="8,4,8,16">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>

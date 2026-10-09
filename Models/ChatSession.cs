@@ -17,6 +17,8 @@ public sealed class ChatSession
     public int SummaryCoveredCount { get; set; }
     /// <summary>Once the writer edits the recap by hand, the automatic digest stops overwriting it.</summary>
     public bool SummaryIsManual { get; set; }
+    /// <summary>How many messages the character-memory extraction has already scanned.</summary>
+    public int MemoryCoveredCount { get; set; }
     /// <summary>Optional label used to keep related conversations together in the picker.</summary>
     public string GroupName { get; set; } = string.Empty;
     /// <summary>Pinned conversations sort to the top of the picker and keep their own column.</summary>

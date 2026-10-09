@@ -17,13 +17,21 @@
     <Border Style="{StaticResource SurfaceBorderStyle}" Padding="22" Margin="0,0,0,14">
      <Grid>
       <Grid.ColumnDefinitions><ColumnDefinition Width="170"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
       <TextBlock Grid.ColumnSpan="2" Text="Interface" Style="{StaticResource SettingsTitle}"/>
       <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="Choose the language used throughout NativeTavern." Style="{StaticResource SettingsDescription}"/>
       <TextBlock Grid.Row="2" Text="Interface Language" Style="{StaticResource SettingsLabel}"/>
       <ComboBox Grid.Row="2" Grid.Column="1" ItemsSource="{Binding Languages}" SelectedItem="{Binding SelectedLanguage}" DisplayMemberPath="DisplayName" Margin="0,0,0,12"/>
       <TextBlock Grid.Row="3" Text="Appearance" Style="{StaticResource SettingsLabel}"/>
       <ComboBox Grid.Row="3" Grid.Column="1" ItemsSource="{Binding Themes}" SelectedItem="{Binding SelectedTheme}" DisplayMemberPath="DisplayName"/>
+      <CheckBox Grid.Row="4" Grid.ColumnSpan="2" Content="Enable global hotkeys" IsChecked="{Binding HotkeysEnabled}" Margin="2,14,0,4"
+                ToolTip="System-wide shortcuts work even when NativeTavern is not focused."/>
+      <TextBlock Grid.Row="5" Grid.ColumnSpan="2" Text="Hotkeys need a modifier such as Ctrl or Alt, e.g. Ctrl+Alt+T. Keys already owned by other apps are skipped."
+                 Foreground="{StaticResource SubtleTextBrush}" FontSize="11" TextWrapping="Wrap" Margin="2,0,0,10"/>
+      <TextBlock Grid.Row="6" Text="Show / hide hotkey" Style="{StaticResource SettingsLabel}"/>
+      <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding ToggleWindowHotkey,UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12"/>
+      <TextBlock Grid.Row="7" Text="Boss key (hide to tray)" Style="{StaticResource SettingsLabel}"/>
+      <TextBox Grid.Row="7" Grid.Column="1" Text="{Binding BossKeyHotkey,UpdateSourceTrigger=PropertyChanged}"/>
      </Grid>
     </Border>
     <Border Style="{StaticResource SurfaceBorderStyle}" Padding="22" Margin="0,0,0,14">
@@ -76,7 +84,9 @@
       <TextBlock Text="Choose which local content may be included in model requests." Style="{StaticResource SettingsDescription}"/>
       <CheckBox Content="Include the selected character card and First Message in model requests" IsChecked="{Binding IncludeCharacterContext}" Margin="2,0,0,15"/>
       <CheckBox Content="Allow matched knowledge-base excerpts to be sent in model requests" IsChecked="{Binding IncludeKnowledgeContext}" Margin="2,0,0,15"/>
-      <CheckBox Content="Allow attached images to be sent in model requests" IsChecked="{Binding IncludeImageContext}" Margin="2,0,0,0"/>
+      <CheckBox Content="Allow attached images to be sent in model requests" IsChecked="{Binding IncludeImageContext}" Margin="2,0,0,15"/>
+      <CheckBox Content="Distill character memory from chats and include it in model requests" IsChecked="{Binding CharacterMemoryEnabled}" Margin="2,0,0,0"
+                ToolTip="Long-term facts the character remembers; view and edit them from the chat header"/>
      </StackPanel>
     </Border>
     <Border Style="{StaticResource SurfaceBorderStyle}" Padding="22" Margin="0,0,0,14">

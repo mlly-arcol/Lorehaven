@@ -20,6 +20,12 @@ public sealed class ProviderSettings
     public bool IncludeCharacterContext { get; set; }
     public bool IncludeKnowledgeContext { get; set; }
     public bool IncludeImageContext { get; set; }
+    /// <summary>Distills long-term memories per character and sends them with model requests.</summary>
+    public bool CharacterMemoryEnabled { get; set; }
+    /// <summary>System-wide hotkeys keep working while the window is unfocused or hidden.</summary>
+    public bool HotkeysEnabled { get; set; }
+    public string ToggleWindowHotkey { get; set; } = "Ctrl+Alt+T";
+    public string BossKeyHotkey { get; set; } = "Ctrl+Alt+B";
     [System.Text.Json.Serialization.JsonIgnore]
     public bool IsConfigured => IsValidBaseUrl(BaseUrl) && !string.IsNullOrWhiteSpace(Model);
 

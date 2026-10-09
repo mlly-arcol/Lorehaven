@@ -47,6 +47,10 @@ public partial class SettingsViewModel(
     [ObservableProperty] private bool _includeCharacterContext;
     [ObservableProperty] private bool _includeKnowledgeContext;
     [ObservableProperty] private bool _includeImageContext;
+    [ObservableProperty] private bool _characterMemoryEnabled;
+    [ObservableProperty] private bool _hotkeysEnabled;
+    [ObservableProperty] private string _toggleWindowHotkey = "Ctrl+Alt+T";
+    [ObservableProperty] private string _bossKeyHotkey = "Ctrl+Alt+B";
     [ObservableProperty] private string? _statusMessage;
     [ObservableProperty] private bool _isBusy;
     private bool _clearApiKey;
@@ -124,6 +128,12 @@ public partial class SettingsViewModel(
         IncludeCharacterContext = resolved.Settings.IncludeCharacterContext;
         IncludeKnowledgeContext = resolved.Settings.IncludeKnowledgeContext;
         IncludeImageContext = resolved.Settings.IncludeImageContext;
+        CharacterMemoryEnabled = resolved.Settings.CharacterMemoryEnabled;
+        HotkeysEnabled = resolved.Settings.HotkeysEnabled;
+        ToggleWindowHotkey = string.IsNullOrWhiteSpace(resolved.Settings.ToggleWindowHotkey)
+            ? "Ctrl+Alt+T" : resolved.Settings.ToggleWindowHotkey;
+        BossKeyHotkey = string.IsNullOrWhiteSpace(resolved.Settings.BossKeyHotkey)
+            ? "Ctrl+Alt+B" : resolved.Settings.BossKeyHotkey;
         _initializing = false;
         if (AutoScanLocalModels) await ScanLocalAsync();
     }
@@ -302,6 +312,13 @@ public partial class SettingsViewModel(
             StatusMessage = L("生成参数超出有效范围。", "Generation parameters are outside the valid range.");
             return false;
         }
+        if (settings.HotkeysEnabled &&
+            (!GlobalHotkeyService.TryParse(settings.ToggleWindowHotkey, out _, out _) ||
+             !GlobalHotkeyService.TryParse(settings.BossKeyHotkey, out _, out _)))
+        {
+            StatusMessage = L("热键格式无效，示例：Ctrl+Alt+T。", "Invalid hotkey format, e.g. Ctrl+Alt+T.");
+            return false;
+        }
         return true;
     }
 
@@ -325,7 +342,11 @@ public partial class SettingsViewModel(
             SelectedLocalModelPath = SelectedLocalModel?.FilePath ?? string.Empty,
             IncludeCharacterContext = IncludeCharacterContext,
             IncludeKnowledgeContext = IncludeKnowledgeContext,
-            IncludeImageContext = IncludeImageContext
+            IncludeImageContext = IncludeImageContext,
+            CharacterMemoryEnabled = CharacterMemoryEnabled,
+            HotkeysEnabled = HotkeysEnabled,
+            ToggleWindowHotkey = ToggleWindowHotkey.Trim(),
+            BossKeyHotkey = BossKeyHotkey.Trim()
         };
     }
 

@@ -7,7 +7,8 @@ public sealed class PromptService(
     PromptRepository repository,
     CharacterRepository characterRepository,
     ChatSessionRepository sessionRepository,
-    KnowledgeService knowledgeService)
+    KnowledgeService knowledgeService,
+    CharacterMemoryRepository? memoryRepository = null)
 {
     private const int MinimumKeptMessages = 2;
     private const int DefaultReplyTokens = 1024;
@@ -50,6 +51,22 @@ public sealed class PromptService(
                  await characterRepository.GetAsync(characterId) is { } character)
         {
             AddSection(sections, "Character", BuildCharacterContext(character));
+        }
+
+        if (settings.CharacterMemoryEnabled && memoryRepository is not null)
+        {
+            if (session.IsGroupChat)
+            {
+                foreach (var member in groupMembers)
+                    AddSection(sections, "Character Memory: " + member.Name,
+                        RenderMemories(await memoryRepository.GetByCharacterAsync(member.Id)));
+            }
+            else if (session.CharacterId is long memoryCharacterId &&
+                     await characterRepository.GetAsync(memoryCharacterId) is { } memoryCharacter)
+            {
+                AddSection(sections, "Character Memory: " + memoryCharacter.Name,
+                    RenderMemories(await memoryRepository.GetByCharacterAsync(memoryCharacterId)));
+            }
         }
 
         if (session.PersonaId is long personaId &&
@@ -166,6 +183,9 @@ public sealed class PromptService(
     {
         if (!string.IsNullOrWhiteSpace(content)) sections.Add(heading + ":\n" + content.Trim());
     }
+
+    private static string RenderMemories(IReadOnlyList<CharacterMemory> memories) =>
+        memories.Count == 0 ? string.Empty : string.Join("\n", memories.Select(x => "- " + x.Content));
 
     private static string BuildCharacterContext(Character character)
     {

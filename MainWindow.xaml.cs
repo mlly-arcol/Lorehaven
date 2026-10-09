@@ -24,6 +24,7 @@ public partial class MainWindow : Window
         DataContext = viewModel;
         PreviewKeyDown += OnPreviewKeyDown;
         ContentRendered += OnContentRendered;
+        SizeChanged += (_, _) => SidebarColumn.Width = new GridLength(ActualWidth < 1100 ? 192 : 220);
     }
 
     private void OnContentRendered(object? sender, EventArgs e)

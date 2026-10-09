@@ -41,22 +41,26 @@ internal sealed class ChatViewModelHarness : IDisposable
         var regexScripts = new RegexScriptService(
             new RegexScriptRepository(Factory), NullLogger<RegexScriptService>.Instance);
         Provider = new GatedProvider();
+        var memoryService = new CharacterMemoryService(
+            new CharacterMemoryRepository(Factory), messages, Sessions, characters,
+            settings, Provider, NullLogger<CharacterMemoryService>.Instance);
         var chatService = new ChatService(
             Sessions, messages, new MessageSwipeRepository(Factory), new ChatAttachmentRepository(Factory),
             new AttachmentService(new ChatAttachmentRepository(Factory), NullLogger<AttachmentService>.Instance),
-            new ConversationSummaryService(messages, Sessions), characters,
+            new ConversationSummaryService(messages, Sessions), memoryService, characters,
             new PromptService(new PromptRepository(Factory), characters, Sessions,
                 new KnowledgeService(new KnowledgeRepository(Factory), NullLogger<KnowledgeService>.Instance)),
             regexScripts,
             settings, Provider, NullLogger<ChatService>.Instance);
         Service = chatService;
         Scripts = regexScripts;
+        Memory = memoryService;
         ViewModel = new ChatViewModel(
             chatService, new PromptRepository(Factory), Drafts, settings, regexScripts,
             new CharacterStatusService(new CharacterStatusRepository(Factory), messages, characters,
                 settings, pluginService, Provider, NullLogger<CharacterStatusService>.Instance),
             new ReplySuggestionService(messages, settings, Provider, NullLogger<ReplySuggestionService>.Instance),
-            pluginService, new TrayService(), NullLogger<ChatViewModel>.Instance);
+            pluginService, new TrayService(), memoryService, NullLogger<ChatViewModel>.Instance);
     }
 
     public string RootDirectory { get; }
@@ -67,6 +71,7 @@ internal sealed class ChatViewModelHarness : IDisposable
     public ComposerDraftRepository Drafts { get; }
     public ChatViewModel ViewModel { get; }
     public GatedProvider Provider { get; }
+    public CharacterMemoryService Memory { get; }
 
     public async Task<ChatSession> CreateSessionAsync(string title, DateTimeOffset? stamp = null)
     {

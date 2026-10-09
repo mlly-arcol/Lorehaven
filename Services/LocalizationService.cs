@@ -262,6 +262,18 @@ public sealed class LocalizationService
             ["Pin this conversation"] = "置顶这个对话",
             ["Unpin this conversation"] = "取消置顶",
             ["Greater than 0"] = "需大于 0",
+            ["Enable global hotkeys"] = "启用全局热键",
+            ["System-wide shortcuts work even when NativeTavern is not focused."] = "全局快捷键在窗口没有焦点时也能使用。",
+            ["Hotkeys need a modifier such as Ctrl or Alt, e.g. Ctrl+Alt+T. Keys already owned by other apps are skipped."] = "热键需要 Ctrl、Alt 等修饰键，例如 Ctrl+Alt+T；被其他程序占用的热键会被跳过。",
+            ["Show / hide hotkey"] = "呼出 / 隐藏热键",
+            ["Boss key (hide to tray)"] = "老板键（立即隐藏到托盘）",
+            ["Distill character memory from chats and include it in model requests"] = "自动提炼角色记忆，并随模型请求发送",
+            ["Long-term facts the character remembers; view and edit them from the chat header"] = "角色长期记住的要点；可在聊天页顶部查看和编辑",
+            ["Character memory"] = "角色记忆",
+            ["No memories yet"] = "还没有记忆",
+            ["Extract now"] = "立即提炼",
+            ["Add"] = "添加",
+            ["Add a memory manually"] = "手动添加一条记忆",
             ["NativeTavern can make mistakes. Check important information."] = "NativeTavern 可能会出错，请核查重要信息。"
         };
 

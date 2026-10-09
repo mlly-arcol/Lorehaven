@@ -35,6 +35,7 @@ public sealed class DatabaseInitializer(DatabaseConnectionFactory connectionFact
             ["Summary"] = "ALTER TABLE ChatSessions ADD COLUMN Summary TEXT NOT NULL DEFAULT ''",
             ["SummaryCoveredCount"] = "ALTER TABLE ChatSessions ADD COLUMN SummaryCoveredCount INTEGER NOT NULL DEFAULT 0",
             ["SummaryIsManual"] = "ALTER TABLE ChatSessions ADD COLUMN SummaryIsManual INTEGER NOT NULL DEFAULT 0",
+            ["MemoryCoveredCount"] = "ALTER TABLE ChatSessions ADD COLUMN MemoryCoveredCount INTEGER NOT NULL DEFAULT 0",
             ["GroupName"] = "ALTER TABLE ChatSessions ADD COLUMN GroupName TEXT NOT NULL DEFAULT ''",
             ["IsPinned"] = "ALTER TABLE ChatSessions ADD COLUMN IsPinned INTEGER NOT NULL DEFAULT 0"
         };

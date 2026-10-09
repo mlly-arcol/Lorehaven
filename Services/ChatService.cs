@@ -13,6 +13,7 @@ public sealed class ChatService(
     ChatAttachmentRepository attachmentRepository,
     AttachmentService attachmentService,
     ConversationSummaryService summaryService,
+    CharacterMemoryService memoryService,
     CharacterRepository characterRepository,
     PromptService promptService,
     RegexScriptService regexScripts,
@@ -361,6 +362,8 @@ public sealed class ChatService(
             await sessionRepository.UpdateAsync(session);
             try { await summaryService.UpdateIfNeededAsync(session); }
             catch (Exception ex) { logger.LogWarning(ex, "Automatic summary update failed."); }
+            // Memory extraction costs an extra model call, so it never blocks the send pipeline.
+            _ = memoryService.ExtractIfNeededAsync(session);
         }
         return assistant;
     }

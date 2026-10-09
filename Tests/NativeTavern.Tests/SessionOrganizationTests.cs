@@ -147,7 +147,11 @@ public class SessionOrganizationTests : IDisposable
         return new ChatService(
             _sessions, messages, new MessageSwipeRepository(_factory), new ChatAttachmentRepository(_factory),
             new AttachmentService(new ChatAttachmentRepository(_factory), NullLogger<AttachmentService>.Instance),
-            new ConversationSummaryService(messages, _sessions), characters,
+            new ConversationSummaryService(messages, _sessions),
+            new CharacterMemoryService(
+                new CharacterMemoryRepository(_factory), messages, _sessions, characters,
+                settings, new SilentProvider(), NullLogger<CharacterMemoryService>.Instance),
+            characters,
             new PromptService(prompts, characters, _sessions, knowledge),
             new RegexScriptService(new RegexScriptRepository(_factory), NullLogger<RegexScriptService>.Instance),
             settings, new SilentProvider(), NullLogger<ChatService>.Instance);

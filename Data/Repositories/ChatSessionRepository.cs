@@ -9,8 +9,8 @@ public sealed class ChatSessionRepository(DatabaseConnectionFactory connectionFa
     {
         await using var connection = connectionFactory.CreateConnection();
         session.Id = await connection.ExecuteScalarAsync<long>(
-            "INSERT INTO ChatSessions(Title,CharacterId,IsGroupChat,ParentSessionId,BranchedFromMessageId,PersonaId,LorebookId,PromptPresetId,AuthorNote,Summary,SummaryCoveredCount,SummaryIsManual,GroupName,IsPinned,CreatedAt,UpdatedAt) " +
-            "VALUES(@Title,@CharacterId,@IsGroupChat,@ParentSessionId,@BranchedFromMessageId,@PersonaId,@LorebookId,@PromptPresetId,@AuthorNote,@Summary,@SummaryCoveredCount,@SummaryIsManual,@GroupName,@IsPinned,@CreatedAt,@UpdatedAt); SELECT last_insert_rowid();",
+            "INSERT INTO ChatSessions(Title,CharacterId,IsGroupChat,ParentSessionId,BranchedFromMessageId,PersonaId,LorebookId,PromptPresetId,AuthorNote,Summary,SummaryCoveredCount,SummaryIsManual,MemoryCoveredCount,GroupName,IsPinned,CreatedAt,UpdatedAt) " +
+            "VALUES(@Title,@CharacterId,@IsGroupChat,@ParentSessionId,@BranchedFromMessageId,@PersonaId,@LorebookId,@PromptPresetId,@AuthorNote,@Summary,@SummaryCoveredCount,@SummaryIsManual,@MemoryCoveredCount,@GroupName,@IsPinned,@CreatedAt,@UpdatedAt); SELECT last_insert_rowid();",
             ToParameters(session));
         return session.Id;
     }
@@ -66,6 +66,14 @@ public sealed class ChatSessionRepository(DatabaseConnectionFactory connectionFa
             "UPDATE ChatSessions SET GroupName=@groupName WHERE Id=@id", new { id, groupName });
     }
 
+    /// <summary>Only the scan watermark moves, so memory extraction never rewrites UpdatedAt.</summary>
+    public async Task SetMemoryCoveredAsync(long id, int coveredCount)
+    {
+        await using var connection = connectionFactory.CreateConnection();
+        await connection.ExecuteAsync(
+            "UPDATE ChatSessions SET MemoryCoveredCount=@coveredCount WHERE Id=@id", new { id, coveredCount });
+    }
+
     public async Task<IReadOnlyList<string>> GetGroupNamesAsync()
     {
         await using var connection = connectionFactory.CreateConnection();
@@ -110,7 +118,8 @@ public sealed class ChatSessionRepository(DatabaseConnectionFactory connectionFa
         value.Id, value.Title, value.CharacterId, IsGroupChat = value.IsGroupChat ? 1 : 0,
         value.ParentSessionId, value.BranchedFromMessageId, value.PersonaId, value.LorebookId,
         value.PromptPresetId, value.AuthorNote, value.Summary, value.SummaryCoveredCount,
-        SummaryIsManual = value.SummaryIsManual ? 1 : 0, value.GroupName, IsPinned = value.IsPinned ? 1 : 0,
+        SummaryIsManual = value.SummaryIsManual ? 1 : 0, value.MemoryCoveredCount,
+        value.GroupName, IsPinned = value.IsPinned ? 1 : 0,
         CreatedAt = value.CreatedAt.ToString("O"),
         UpdatedAt = value.UpdatedAt.ToString("O")
     };
@@ -130,6 +139,7 @@ public sealed class ChatSessionRepository(DatabaseConnectionFactory connectionFa
         public string Summary { get; init; } = string.Empty;
         public int SummaryCoveredCount { get; init; }
         public int SummaryIsManual { get; init; }
+        public int MemoryCoveredCount { get; init; }
         public string GroupName { get; init; } = string.Empty;
         public int IsPinned { get; init; }
         public string CreatedAt { get; init; } = string.Empty;
@@ -140,6 +150,7 @@ public sealed class ChatSessionRepository(DatabaseConnectionFactory connectionFa
             ParentSessionId = ParentSessionId, BranchedFromMessageId = BranchedFromMessageId, PersonaId = PersonaId,
             LorebookId = LorebookId, PromptPresetId = PromptPresetId, AuthorNote = AuthorNote, Summary = Summary,
             SummaryCoveredCount = SummaryCoveredCount, SummaryIsManual = SummaryIsManual != 0,
+            MemoryCoveredCount = MemoryCoveredCount,
             GroupName = GroupName, IsPinned = IsPinned != 0,
             CreatedAt = DateTimeOffset.Parse(CreatedAt),
             UpdatedAt = DateTimeOffset.Parse(UpdatedAt)
