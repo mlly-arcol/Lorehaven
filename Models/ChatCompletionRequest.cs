@@ -10,6 +10,7 @@ public sealed class ChatCompletionRequest
     [JsonPropertyName("top_p")] public double TopP { get; init; } = 1.0;
     [JsonPropertyName("max_tokens")] public int MaxTokens { get; init; } = 1024;
     [JsonPropertyName("stream")] public bool Stream { get; init; } = true;
+    [JsonIgnore] public bool DisableLocalThinking { get; init; }
 }
 
 public sealed class ChatCompletionMessage

@@ -1,0 +1,16 @@
+{
+  "id": "nativetavern.dice-random-tables",
+  "name": "掷骰与随机表",
+  "version": "1.0.0",
+  "author": "Lorehaven",
+  "description": "在聊天中本地掷骰，或从声明式加权随机表中抽取结果。",
+  "minimumAppVersion": "2.3.0",
+  "permissions": [
+    "读取插件提供的随机表",
+    "在当前对话中保存用户主动生成的随机结果",
+    "仅在用户选择时将随机结果加入模型上下文"
+  ],
+  "capabilities": [
+    "dice-random-tables-v1"
+  ]
+}

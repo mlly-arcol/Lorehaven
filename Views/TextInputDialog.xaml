@@ -1,16 +1,16 @@
 <Window x:Class="NativeTavern.Views.TextInputDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="NativeTavern" Width="440" SizeToContent="Height" ResizeMode="NoResize"
-        WindowStartupLocation="CenterOwner" Background="{StaticResource WindowBrush}"
-        ShowInTaskbar="False">
+        Title="Lorehaven" Width="440" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" Background="{DynamicResource WindowBrush}"
+        ShowInTaskbar="False" Foreground="{DynamicResource TextBrush}">
     <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock x:Name="PromptText" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,10"/>
+        <TextBlock x:Name="PromptText" FontFamily="Georgia, Cambria, SimSun" Foreground="{DynamicResource AccentDeepTextBrush}" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,14"/>
         <TextBox x:Name="ValueTextBox" Grid.Row="1" MinHeight="40" VerticalContentAlignment="Center"
                  AutomationProperties.Name="Conversation title"/>
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">

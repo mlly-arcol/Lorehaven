@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <StartupObject>FeaturePreview.Program</StartupObject>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Include="System.IO" />
+    <!-- .txt keeps this standalone preview out of the application's default .cs glob. -->
+    <Compile Include="Program.cs.txt" />
+    <Compile Include="..\..\Tests\NativeTavern.Tests\ChatViewModelHarness.cs" Link="ChatViewModelHarness.cs" />
+    <ProjectReference Include="..\..\Lorehaven.csproj" />
+  </ItemGroup>
+</Project>

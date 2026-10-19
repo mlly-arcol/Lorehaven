@@ -1,0 +1,70 @@
+<Window x:Class="NativeTavern.Views.DiceRandomDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="掷骰与随机表" Width="650" Height="620" MinWidth="490" MinHeight="420"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" ResizeMode="CanResizeWithGrip"
+        Background="{DynamicResource WindowBrush}" Foreground="{DynamicResource TextBrush}"
+        FontFamily="Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI"
+        Loaded="Dialog_OnLoaded">
+    <Grid Margin="22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock x:Name="Heading" Text="掷骰与随机表" FontFamily="Georgia, Cambria, SimSun"
+                   FontSize="24" FontWeight="SemiBold"/>
+        <TextBlock x:Name="Hint" Grid.Row="1" Text="结果保存在当前对话。只有点击“填入输入框”并发送后，模型才会看到它。"
+                   TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}" Margin="0,7,0,16"/>
+        <Border Grid.Row="2" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="1" CornerRadius="12" Padding="13">
+            <StackPanel>
+                <TextBlock x:Name="DiceLabel" Text="掷骰表达式" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                <DockPanel>
+                    <Button x:Name="RollButton" DockPanel.Dock="Right" Content="掷骰" Style="{StaticResource PrimaryButtonStyle}"
+                            Click="Roll_OnClick" Margin="8,0,0,0"/>
+                    <TextBox x:Name="DiceNotation" VerticalContentAlignment="Center"
+                             ToolTip="例如 d20、2d6+1"/>
+                </DockPanel>
+                <TextBlock x:Name="TableLabel" Text="随机表" FontWeight="SemiBold" Margin="0,16,0,6"/>
+                <DockPanel>
+                    <Button x:Name="DrawButton" DockPanel.Dock="Right" Content="抽取" Click="Draw_OnClick"
+                            Margin="8,0,0,0"/>
+                    <ComboBox x:Name="TablesBox" DisplayMemberPath="Name" VerticalContentAlignment="Center"
+                              MinWidth="280"/>
+                </DockPanel>
+            </StackPanel>
+        </Border>
+        <Border Grid.Row="3" Background="{DynamicResource AccentTintBgBrush}" BorderBrush="{DynamicResource AccentTintBorderBrush}"
+                BorderThickness="1" CornerRadius="10" Padding="13" Margin="0,12,0,12">
+            <StackPanel>
+                <TextBlock x:Name="ResultHeading" Text="本次结果" FontWeight="SemiBold"/>
+                <TextBlock x:Name="ResultText" Text="尚未掷骰或抽取。" FontSize="18" FontWeight="SemiBold"
+                           TextWrapping="Wrap" Margin="0,5,0,0"/>
+                <TextBlock x:Name="DetailText" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,5,0,0"/>
+            </StackPanel>
+        </Border>
+        <Grid Grid.Row="4">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <TextBlock x:Name="HistoryHeading" Text="最近结果" FontWeight="SemiBold" Margin="0,0,0,7"/>
+            <ListBox x:Name="HistoryList" Grid.Row="1" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                     SelectionChanged="HistoryList_OnSelectionChanged">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="6,5">
+                            <TextBlock Text="{Binding SourceLabel}" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding ResultText}" TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
+        <DockPanel Grid.Row="5" Margin="0,13,0,0">
+            <TextBlock x:Name="StatusText" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="CloseButton" Content="关闭" Click="Close_OnClick" Margin="0,0,8,0"/>
+                <Button x:Name="InsertButton" Content="填入输入框" Style="{StaticResource PrimaryButtonStyle}"
+                        IsEnabled="False" Click="Insert_OnClick"/>
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>

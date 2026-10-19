@@ -78,6 +78,18 @@ public class ConversationSummaryTests : IDisposable
     }
 
     [Fact]
+    public async Task MessageRangeReadsOnlyTheRequestedPositions()
+    {
+        await AddTurnsAsync(1, 30);
+        Assert.Equal(30, await _messages.CountBySessionAsync(_session.Id));
+
+        var slice = await _messages.GetBySessionRangeAsync(_session.Id, 17, 3);
+
+        Assert.Equal(new[] { "第 18 条", "第 19 条", "第 20 条" },
+            slice.Select(message => message.Content));
+    }
+
+    [Fact]
     public async Task CoverageSurvivesAReload()
     {
         await AddTurnsAsync(1, 25);
@@ -142,6 +154,21 @@ public class ConversationSummaryTests : IDisposable
 
         Assert.Equal(15, _session.SummaryCoveredCount);
         Assert.Equal(15, Lines(_session.Summary).Count);
+    }
+
+    [Fact]
+    public async Task RemovingEnoughTurnsClearsAnOutdatedAutomaticDigest()
+    {
+        await AddTurnsAsync(1, 25);
+        await _summaries.UpdateIfNeededAsync(_session);
+        var history = await _messages.GetBySessionAsync(_session.Id);
+        foreach (var message in history.Take(8)) await _messages.DeleteAsync(message.Id);
+
+        await _summaries.UpdateIfNeededAsync(_session);
+
+        Assert.Empty(_session.Summary);
+        Assert.Equal(0, _session.SummaryCoveredCount);
+        Assert.Equal(0, (await _sessions.GetAsync(_session.Id))!.SummaryCoveredCount);
     }
 
     [Fact]

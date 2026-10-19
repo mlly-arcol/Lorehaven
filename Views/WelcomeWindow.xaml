@@ -1,0 +1,76 @@
+<Window x:Class="NativeTavern.Views.WelcomeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:helpers="clr-namespace:NativeTavern.Helpers"
+        Title="Welcome to Lorehaven" Width="1020" Height="700" MinWidth="900" MinHeight="620"
+        Icon="/Lorehaven;component/Assets/NativeTavern.png"
+        WindowStartupLocation="CenterScreen" Background="{DynamicResource WindowBrush}"
+        FontFamily="Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI" FontSize="14"
+        Foreground="{DynamicResource TextBrush}" UseLayoutRounding="True" PreviewKeyDown="Window_OnPreviewKeyDown">
+    <Grid>
+        <Rectangle Opacity="{DynamicResource ThemeWelcomeTextureOpacity}" IsHitTestVisible="False">
+            <Rectangle.Fill><ImageBrush ImageSource="{DynamicResource ThemePaperTexture}" TileMode="Tile" Viewport="0,0,320,320" ViewportUnits="Absolute"/></Rectangle.Fill>
+        </Rectangle>
+        <Grid Margin="24" helpers:UiMotion.Entrance="True">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="1.05*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Border Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource PaperEdgeBrush}" BorderThickness="1" CornerRadius="16" Margin="0,0,12,0">
+                <Grid ClipToBounds="True">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="150"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                    <StackPanel Orientation="Horizontal" Margin="24,23,24,21">
+                        <Image Width="44" Height="44" Source="{StaticResource BrandIcon}" Stretch="Uniform" AutomationProperties.Name="Lorehaven"/>
+                        <StackPanel Margin="11,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="Lorehaven" FontFamily="{DynamicResource JournalTitleFontFamily}" FontSize="23" FontWeight="SemiBold"/>
+                            <TextBlock Text="Story workspace" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <Image Grid.Row="1" Source="{DynamicResource ThemeHeaderArtwork}" Stretch="UniformToFill" VerticalAlignment="Center" Height="150" Opacity="{DynamicResource ThemeWelcomeHeaderOpacity}" IsHitTestVisible="False"/>
+                    <StackPanel Grid.Row="2" VerticalAlignment="Center" Margin="25,18,25,15">
+                        <Border BorderBrush="{DynamicResource ClayBrush}" BorderThickness="2,0,0,0" Padding="13,0,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Every conversation opens a new possibility." FontFamily="{DynamicResource JournalTitleFontFamily}" TextWrapping="Wrap" FontSize="27" FontWeight="SemiBold" LineHeight="36"/>
+                                <TextBlock Text="Create characters, collect ideas and make room for your next story." Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" FontSize="12" LineHeight="21" Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                    <StackPanel Grid.Row="3" Margin="25,0,25,23">
+                        <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,0,0,14"/>
+                        <DockPanel Margin="0,0,0,9">
+                            <TextBlock Text="&#xE8F2;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{DynamicResource AccentBrush}" FontSize="14" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Conversations that spark new ideas" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap"/>
+                        </DockPanel>
+                        <DockPanel Margin="0,0,0,9">
+                            <TextBlock Text="&#xE716;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{DynamicResource AccentBrush}" FontSize="14" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Characters, memories and branching stories" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap"/>
+                        </DockPanel>
+                        <DockPanel>
+                            <TextBlock Text="&#xE8F1;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{DynamicResource ClayBrush}" FontSize="14" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="A library for your worlds and references" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap"/>
+                        </DockPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <Grid Grid.Column="1" Margin="27,18,17,18" MaxWidth="350" VerticalAlignment="Center">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,21">
+                        <TextBlock Text="&#xE8A5;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Foreground="{DynamicResource ClayBrush}" VerticalAlignment="Center" Margin="0,0,9,0"/>
+                        <TextBlock Text="Your creative space" Foreground="{DynamicResource ClayTintTextBrush}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Text="Welcome to Lorehaven" FontFamily="{DynamicResource JournalTitleFontFamily}" FontSize="30" FontWeight="SemiBold" TextWrapping="Wrap" LineHeight="40"/>
+                    <TextBlock Text="Step into your workspace to continue a conversation or begin a new story." Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" LineHeight="24" Margin="0,15,0,27"/>
+                    <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,1" Padding="0,16" Margin="0,0,0,30">
+                        <TextBlock Text="Connect a model, import a character card or pick up where you left off." Foreground="{DynamicResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap" LineHeight="22"/>
+                    </Border>
+                    <Button x:Name="EnterWorkspaceButton" IsDefault="True" MinHeight="52" Style="{StaticResource PrimaryButtonStyle}" Margin="0" Padding="19,13" HorizontalContentAlignment="Stretch"
+                            Click="EnterWorkspace_OnClick" AutomationProperties.Name="{Binding Text, ElementName=EnterWorkspaceLabel}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock x:Name="EnterWorkspaceLabel" Text="Enter workspace" Foreground="{DynamicResource OnAccentBrush}" FontSize="15" FontWeight="SemiBold"/>
+                            <TextBlock Grid.Column="1" Text="&#xE72A;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="{DynamicResource OnAccentBrush}" Margin="14,0,0,0" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Button>
+                    <TextBlock Text="Your characters. Your world. Your workspace." Foreground="{DynamicResource SubtleTextBrush}" FontSize="10" TextWrapping="Wrap" TextAlignment="Center" Margin="0,18,0,0"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

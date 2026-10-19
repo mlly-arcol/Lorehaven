@@ -47,12 +47,20 @@ public sealed class InstalledPlugin
     public required PluginManifest Manifest { get; init; }
     public required string DirectoryPath { get; init; }
     public bool IsEnabled { get; init; }
+    public IReadOnlyList<string> UnsupportedCapabilities { get; init; } = [];
+    public int SupportedCapabilityCount { get; init; }
+    public string? ValidationError { get; init; }
     public string Name => Manifest.Name;
     public string Id => Manifest.Id;
     public string Version => Manifest.Version;
     public string Author => Manifest.Author;
     public string Description => Manifest.Description;
-    public string StateText => IsEnabled ? "已启用" : "已停用";
+    public string StateText => !IsEnabled ? "已停用" : ValidationError is not null
+        ? "配置无效" : SupportedCapabilityCount == 0 ? "已启用 · 无可用能力" : "已启用";
+    public string CapabilityStatusText => UnsupportedCapabilities.Count == 0
+        ? string.Empty
+        : "当前版本不支持：" + string.Join("、", UnsupportedCapabilities);
+    public string ValidationStatusText => ValidationError is null ? string.Empty : "插件数据无效：" + ValidationError;
     public string PermissionText => Manifest.Permissions.Count == 0
         ? "未声明权限"
         : "权限：" + string.Join("、", Manifest.Permissions);

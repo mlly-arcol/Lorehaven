@@ -1,0 +1,15 @@
+{
+  "id": "nativetavern.story-prompts",
+  "name": "剧情提示词资源包",
+  "version": "1.0.0",
+  "author": "Lorehaven",
+  "description": "提供可按对话选择的叙事 Persona、世界书、预设和文本规则。",
+  "minimumAppVersion": "2.3.0",
+  "permissions": [
+    "读取当前对话最近的消息，用于匹配世界书关键词",
+    "将已选择的提示词加入模型请求"
+  ],
+  "capabilities": [
+    "prompt-resources-v1"
+  ]
+}

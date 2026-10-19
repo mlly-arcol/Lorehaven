@@ -16,7 +16,7 @@ public partial class PromptStudioView : UserControl
         var dialog = new SaveFileDialog
         {
             Title = "Export Prompt Resources",
-            FileName = $"nativetavern-resources-{DateTime.Now:yyyy-MM-dd}.json",
+            FileName = $"lorehaven-resources-{DateTime.Now:yyyy-MM-dd}.json",
             DefaultExt = ".json",
             AddExtension = true,
             Filter = "JSON (*.json)|*.json"

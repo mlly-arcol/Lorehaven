@@ -15,7 +15,7 @@ public sealed class LocalizationServiceTests
     /// <summary>Terms that stay English on purpose, plus glyph-only labels.</summary>
     private static readonly string[] TechnicalTerms =
     [
-        "API Key", "Base URL", "Top P", "Ctrl+N", "NativeTavern", "Y"
+        "API Key", "Base URL", "Top P", "Ctrl+N", "Lorehaven", "Y", "TXT", "MD", "PDF"
     ];
 
     private static readonly Regex LiteralAttribute = new(
@@ -43,7 +43,7 @@ public sealed class LocalizationServiceTests
         {
             foreach (Match match in LiteralAttribute.Matches(File.ReadAllText(file)))
             {
-                var value = match.Groups["value"].Value;
+                var value = System.Net.WebUtility.HtmlDecode(match.Groups["value"].Value);
                 if (value.Any(character => character > 127)) continue; // Already written in Chinese.
                 if (TechnicalTerms.Contains(value)) continue;
                 Assert.True(

@@ -60,7 +60,8 @@ internal sealed class ChatViewModelHarness : IDisposable
             new CharacterStatusService(new CharacterStatusRepository(Factory), messages, characters,
                 settings, pluginService, Provider, NullLogger<CharacterStatusService>.Instance),
             new ReplySuggestionService(messages, settings, Provider, NullLogger<ReplySuggestionService>.Instance),
-            pluginService, new TrayService(), memoryService, NullLogger<ChatViewModel>.Instance);
+            pluginService, new TrayService(), memoryService,
+            new ConversationTitleService(messages, settings, Provider), NullLogger<ChatViewModel>.Instance);
     }
 
     public string RootDirectory { get; }

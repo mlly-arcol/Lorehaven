@@ -14,45 +14,119 @@ public enum AppThemeMode
 }
 
 /// <summary>
-/// Restyles the whole application by mutating the shared palette brushes in place,
-/// so every StaticResource consumer repaints without re-resolving its references.
+/// Restyles the application with semantic palette resources. DynamicResource consumers
+/// also update when WPF has frozen a brush and the resource must be replaced.
 /// </summary>
 public static class ThemeService
 {
     public sealed record ThemeColor(string ResourceKey, string Light, string Dark);
+    public sealed record ThemeArtwork(
+        string HeaderResourceKey,
+        string SidebarResourceKey,
+        string NotesResourceKey,
+        string TextureResourceKey,
+        IReadOnlyDictionary<string, double> Opacities);
 
+    public const string HarborStyle = "harbor";
+    public const string StarlitStyle = "starlit";
+
+    // Keep the original palette available to callers and existing saved installations.
     public static readonly IReadOnlyList<ThemeColor> Palette =
     [
-        new("WindowBrush", "#F8F9FD", "#0F1115"),
-        new("SidebarBrush", "#F1F3F9", "#14171D"),
-        new("PanelBrush", "#FFFFFF", "#1A1E26"),
-        new("CardBrush", "#F3F5FA", "#232833"),
-        new("HoverBrush", "#E8ECF6", "#2B313D"),
-        new("AccentBrush", "#525BD4", "#6E77E9"),
-        new("AccentHoverBrush", "#424AB5", "#858EF0"),
-        new("TextBrush", "#20263B", "#E9EDF5"),
-        new("MutedTextBrush", "#606B82", "#A6AFC0"),
-        new("SubtleTextBrush", "#727D92", "#8892A3"),
-        new("BorderBrush", "#DFE4EF", "#2F3641"),
-        new("DangerBrush", "#C0392B", "#E4695B"),
-        new("OnAccentBrush", "#FFFFFF", "#FFFFFF"),
+        new("WindowBrush", "#F5F1E8", "#18221F"),
+        new("SidebarBrush", "#F0EADD", "#1D2B26"),
+        new("PanelBrush", "#FFFCF6", "#23332D"),
+        new("CardBrush", "#F3EEE4", "#2B3D35"),
+        new("HoverBrush", "#E7E4D5", "#365045"),
+        new("AccentBrush", "#244D47", "#A8C8AD"),
+        new("AccentHoverBrush", "#356659", "#BED7BB"),
+        new("TextBrush", "#242E2A", "#F2EDDF"),
+        new("MutedTextBrush", "#626E63", "#B6C1B5"),
+        new("SubtleTextBrush", "#71776D", "#A6B3A4"),
+        new("BorderBrush", "#DED2BC", "#47584B"),
+        new("DangerBrush", "#A74532", "#E39E88"),
+        new("OnAccentBrush", "#FFF8E9", "#14251D"),
         new("MaskBrush", "#32000000", "#66000000"),
-        new("StrongBorderBrush", "#606060", "#9AA3B2"),
-        new("NeutralBgBrush", "#F2F4F8", "#262C36"),
-        new("NeutralBorderBrush", "#DCDFE6", "#3B4250"),
-        new("SuccessTextBrush", "#18864B", "#4FBE83"),
-        new("DangerTextBrush", "#B42318", "#F0938A"),
-        new("DangerSolidBrush", "#C83C32", "#B33C31"),
-        new("DangerStrongTextBrush", "#8D3028", "#F3B4AB"),
-        new("DangerSoftBgBrush", "#FDF0EF", "#33201E"),
-        new("DangerSoftBorderBrush", "#F1C6C2", "#5C332D"),
-        new("WarningTextBrush", "#765F18", "#F2D98C"),
-        new("WarningSoftBgBrush", "#FFF7D6", "#33290F"),
-        new("WarningSoftBorderBrush", "#F0D98A", "#5E4C1D"),
-        new("AccentTintBgBrush", "#F3F3FD", "#23263A"),
-        new("AccentTintBorderBrush", "#DDD9F4", "#3B3F63"),
-        new("AccentTintTextBrush", "#514B96", "#B7BEF2"),
-        new("AccentDeepTextBrush", "#29264F", "#DDE0FA"),
+        new("StrongBorderBrush", "#A9A08A", "#7E9381"),
+        new("NeutralBgBrush", "#F0EBE1", "#2B3932"),
+        new("NeutralBorderBrush", "#DAD0BD", "#48594B"),
+        new("SuccessTextBrush", "#3B7456", "#A4CCA9"),
+        new("DangerTextBrush", "#A43E2D", "#EDAF99"),
+        new("DangerSolidBrush", "#AD4935", "#A04C39"),
+        new("DangerStrongTextBrush", "#863C2B", "#F3C1AC"),
+        new("DangerSoftBgBrush", "#F9E8DE", "#423129"),
+        new("DangerSoftBorderBrush", "#E9C4AE", "#775442"),
+        new("WarningTextBrush", "#8A642D", "#DFC392"),
+        new("WarningSoftBgBrush", "#F6EDD8", "#3D3727"),
+        new("WarningSoftBorderBrush", "#E3D0A5", "#6C6143"),
+        new("AccentTintBgBrush", "#E3E5D6", "#334A3D"),
+        new("AccentTintBorderBrush", "#CBD2BB", "#5B725D"),
+        new("AccentTintTextBrush", "#345D4D", "#C6DDC1"),
+        new("AccentDeepTextBrush", "#264C3F", "#E2EADB"),
+        new("TealBrush", "#3B6D5D", "#A4C9B0"),
+        new("TealTintBgBrush", "#E8EDDF", "#2C4439"),
+        new("TealTintBorderBrush", "#C9D6BF", "#506D58"),
+        new("TealTintTextBrush", "#476957", "#C0D8BF"),
+        new("ClayBrush", "#B85D36", "#E7AA7B"),
+        new("ClayTintBgBrush", "#F9E5D7", "#49372D"),
+        new("ClayTintBorderBrush", "#E9C5A9", "#79604A"),
+        new("ClayTintTextBrush", "#9A4D2F", "#F0C6A1"),
+        new("PaperEdgeBrush", "#E5D9C4", "#3C4C40"),
+        new("MarkdownQuoteBorderBrush", "#B4B8BF", "#7E9381"),
+        new("MarkdownQuoteTextBrush", "#555960", "#C4D0C3"),
+        new("MarkdownRuleBrush", "#DADCE0", "#47584B"),
+        new("MarkdownCodeBrush", "#F4F5F7", "#18251F"),
+        new("MarkdownInlineCodeBrush", "#EEEFF2", "#334A3D"),
+        new("MarkdownLinkBrush", "#0000FF", "#AFC8F5"),
+    ];
+
+    public static readonly IReadOnlyList<ThemeColor> StarlitPalette =
+    [
+        new("WindowBrush", "#F5F1EC", "#1D1A27"),
+        new("SidebarBrush", "#EDE7E3", "#24202F"),
+        new("PanelBrush", "#FCF9F3", "#2B2638"),
+        new("CardBrush", "#F0EAE5", "#332D40"),
+        new("HoverBrush", "#E5DCE8", "#463C55"),
+        new("AccentBrush", "#5D4B79", "#DCC39A"),
+        new("AccentHoverBrush", "#75618D", "#EAD3AE"),
+        new("TextBrush", "#302B3B", "#F0EAF4"),
+        new("MutedTextBrush", "#6F6479", "#C5BACF"),
+        new("SubtleTextBrush", "#807389", "#B2A6BE"),
+        new("BorderBrush", "#DCD1DF", "#51455F"),
+        new("DangerBrush", "#A7444D", "#E7A1AB"),
+        new("OnAccentBrush", "#FFF9EF", "#2C2335"),
+        new("MaskBrush", "#3220192B", "#7820192B"),
+        new("StrongBorderBrush", "#AEA0B8", "#9380A6"),
+        new("NeutralBgBrush", "#EDE7E8", "#342C40"),
+        new("NeutralBorderBrush", "#D6CBDC", "#574962"),
+        new("SuccessTextBrush", "#426D5F", "#A9CDB8"),
+        new("DangerTextBrush", "#A5404E", "#EDABB6"),
+        new("DangerSolidBrush", "#AC4B58", "#A25165"),
+        new("DangerStrongTextBrush", "#8D3547", "#F3C0CA"),
+        new("DangerSoftBgBrush", "#F7E6E8", "#49303F"),
+        new("DangerSoftBorderBrush", "#E5BFC9", "#7B4E65"),
+        new("WarningTextBrush", "#8A642D", "#E4C995"),
+        new("WarningSoftBgBrush", "#F7EDD9", "#443A2D"),
+        new("WarningSoftBorderBrush", "#E3CCA0", "#756349"),
+        new("AccentTintBgBrush", "#EAE1EF", "#41354F"),
+        new("AccentTintBorderBrush", "#D3C3DF", "#786189"),
+        new("AccentTintTextBrush", "#624D7D", "#DECCE9"),
+        new("AccentDeepTextBrush", "#49355F", "#EDE0F4"),
+        new("TealBrush", "#526F75", "#B0CCD0"),
+        new("TealTintBgBrush", "#E6ECEC", "#2D414B"),
+        new("TealTintBorderBrush", "#C5D6D8", "#52717D"),
+        new("TealTintTextBrush", "#506A75", "#C4DBE0"),
+        new("ClayBrush", "#A77439", "#E4BF83"),
+        new("ClayTintBgBrush", "#F5EBD9", "#46392F"),
+        new("ClayTintBorderBrush", "#E4CCA4", "#81684B"),
+        new("ClayTintTextBrush", "#8E632F", "#E9CD9E"),
+        new("PaperEdgeBrush", "#E2D7D9", "#44394F"),
+        new("MarkdownQuoteBorderBrush", "#B4A1C4", "#9D87B2"),
+        new("MarkdownQuoteTextBrush", "#6B5D79", "#D4C7DF"),
+        new("MarkdownRuleBrush", "#DCD1DF", "#51455F"),
+        new("MarkdownCodeBrush", "#EEE9F1", "#211B2D"),
+        new("MarkdownInlineCodeBrush", "#E8DEEE", "#463651"),
+        new("MarkdownLinkBrush", "#65447E", "#E4C995"),
     ];
 
     private const int DarkModeAttribute = 20;
@@ -71,16 +145,27 @@ public static class ThemeService
     }
 
     public static AppThemeMode Mode { get; private set; } = AppThemeMode.System;
+    public static string StyleCode { get; private set; } = StarlitStyle;
     public static bool IsDark { get; private set; }
     public static event Action? ThemeChanged;
 
-    public static void Apply(AppThemeMode mode, bool? systemDark = null)
+    public static void Apply(AppThemeMode mode, bool? systemDark = null) =>
+        Apply(mode, StyleCode, systemDark);
+
+    public static void Apply(AppThemeMode mode, string? styleCode, bool? systemDark = null)
     {
+        if (Application.Current is { } currentApp && !currentApp.Dispatcher.CheckAccess())
+        {
+            currentApp.Dispatcher.Invoke(() => Apply(mode, styleCode, systemDark));
+            return;
+        }
+
         Mode = mode;
+        StyleCode = NormalizeStyle(styleCode);
         IsDark = ResolveIsDark(mode, systemDark ?? IsSystemDark());
         if (Application.Current is not { } app) return;
 
-        foreach (var entry in Palette)
+        foreach (var entry in GetPalette(StyleCode))
         {
             var color = ParseColor(IsDark ? entry.Dark : entry.Light);
             switch (app.Resources[entry.ResourceKey])
@@ -94,11 +179,52 @@ public static class ThemeService
             }
         }
 
+        var artwork = GetArtwork(StyleCode, IsDark);
+        ApplyArtwork(app, "ThemeHeaderArtwork", artwork.HeaderResourceKey);
+        ApplyArtwork(app, "ThemeSidebarArtwork", artwork.SidebarResourceKey);
+        ApplyArtwork(app, "ThemeNotesArtwork", artwork.NotesResourceKey);
+        ApplyArtwork(app, "ThemePaperTexture", artwork.TextureResourceKey);
+        foreach (var (resourceKey, opacity) in artwork.Opacities)
+            app.Resources[resourceKey] = opacity;
+        app.Resources["ComposerShadowColor"] = ParseColor(StyleCode == HarborStyle ? "#244D47" : "#5D4B79");
+
         foreach (Window window in app.Windows) ApplyTitleBar(window);
         ThemeChanged?.Invoke();
     }
 
     public static void Apply(string? modeCode) => Apply(ParseMode(modeCode));
+
+    public static void Apply(string? modeCode, string? styleCode) => Apply(ParseMode(modeCode), styleCode);
+
+    public static string NormalizeStyle(string? styleCode) =>
+        styleCode?.Trim().ToLowerInvariant() == HarborStyle ? HarborStyle : StarlitStyle;
+
+    public static IReadOnlyList<ThemeColor> GetPalette(string? styleCode) =>
+        NormalizeStyle(styleCode) == HarborStyle ? Palette : StarlitPalette;
+
+    public static ThemeArtwork GetArtwork(string? styleCode, bool isDark)
+    {
+        var isHarbor = NormalizeStyle(styleCode) == HarborStyle;
+        var prefix = isHarbor ? "Harbor" : "Starlit";
+        return new ThemeArtwork(
+            prefix + "HeaderArtwork", prefix + "SidebarArtwork", prefix + "NotesArtwork", prefix + "PaperTexture",
+            new Dictionary<string, double>(StringComparer.Ordinal)
+            {
+                ["ThemeHeaderOpacity"] = isHarbor ? isDark ? .18 : .78 : isDark ? .28 : .46,
+                ["ThemeSidebarOpacity"] = isHarbor ? .3 : isDark ? .19 : .34,
+                ["ThemeNotesOpacity"] = isHarbor ? isDark ? .16 : .8 : isDark ? .19 : .32,
+                ["ThemeTextureOpacity"] = isDark ? .08 : .12,
+                ["ThemeSidebarTextureOpacity"] = !isHarbor && isDark ? .08 : .16,
+                ["ThemeWelcomeTextureOpacity"] = !isHarbor && isDark ? .09 : .18,
+                ["ThemeChatTextureOpacity"] = !isHarbor && isDark ? .04 : .07,
+                ["ThemeWelcomeHeaderOpacity"] = !isHarbor && isDark ? .72 : 1d,
+            });
+    }
+
+    private static void ApplyArtwork(Application app, string targetKey, string sourceKey)
+    {
+        if (app.TryFindResource(sourceKey) is { } source) app.Resources[targetKey] = source;
+    }
 
     public static AppThemeMode ParseMode(string? modeCode) =>
         modeCode?.Trim().ToLowerInvariant() switch

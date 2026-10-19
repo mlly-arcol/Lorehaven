@@ -8,6 +8,7 @@ using System.Windows.Threading;
 using Markdig;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
+using NativeTavern.Services;
 
 namespace NativeTavern.Controls;
 
@@ -37,6 +38,14 @@ public sealed class MarkdownViewer : FlowDocumentScrollViewer
         Background = Brushes.Transparent;
         BorderThickness = new Thickness(0);
         Padding = new Thickness(0);
+        SetResourceReference(ForegroundProperty, "TextBrush");
+        Loaded += (_, _) =>
+        {
+            ThemeService.ThemeChanged -= OnThemeChanged;
+            ThemeService.ThemeChanged += OnThemeChanged;
+            RenderNow();
+        };
+        Unloaded += (_, _) => ThemeService.ThemeChanged -= OnThemeChanged;
 
         _renderTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -47,6 +56,12 @@ public sealed class MarkdownViewer : FlowDocumentScrollViewer
             _renderTimer.Stop();
             RenderMarkdown();
         };
+    }
+
+    private void OnThemeChanged()
+    {
+        if (Dispatcher.CheckAccess()) RenderNow();
+        else Dispatcher.InvokeAsync(RenderNow);
     }
 
     public string Markdown
@@ -132,12 +147,12 @@ public sealed class MarkdownViewer : FlowDocumentScrollViewer
             {
                 var section = new Section
                 {
-                    BorderBrush = new SolidColorBrush(Color.FromRgb(180, 184, 191)),
                     BorderThickness = new Thickness(3, 0, 0, 0),
                     Padding = new Thickness(12, 1, 0, 1),
-                    Margin = new Thickness(0, 4, 0, 8),
-                    Foreground = new SolidColorBrush(Color.FromRgb(85, 89, 96))
+                    Margin = new Thickness(0, 4, 0, 8)
                 };
+                section.SetResourceReference(System.Windows.Documents.Block.BorderBrushProperty, "MarkdownQuoteBorderBrush");
+                section.SetResourceReference(TextElement.ForegroundProperty, "MarkdownQuoteTextBrush");
                 foreach (var child in quote)
                     AddBlock(section.Blocks, child);
                 target.Add(section);
@@ -147,13 +162,16 @@ public sealed class MarkdownViewer : FlowDocumentScrollViewer
                 target.Add(CreateList(listBlock));
                 break;
             case ThematicBreakBlock:
-                target.Add(new BlockUIContainer(new Border
+            {
+                var rule = new Border
                 {
                     Height = 1,
-                    Background = new SolidColorBrush(Color.FromRgb(218, 220, 224)),
                     Margin = new Thickness(0, 8, 0, 10)
-                }));
+                };
+                rule.SetResourceReference(Border.BackgroundProperty, "MarkdownRuleBrush");
+                target.Add(new BlockUIContainer(rule));
                 break;
+            }
             case ContainerBlock container:
                 foreach (var child in container)
                     AddBlock(target, child);
@@ -204,7 +222,7 @@ public sealed class MarkdownViewer : FlowDocumentScrollViewer
         paragraph.FontFamily = new FontFamily("Cascadia Mono, Consolas");
         paragraph.FontSize = 13;
         paragraph.LineHeight = 20;
-        paragraph.Background = new SolidColorBrush(Color.FromRgb(244, 245, 247));
+        paragraph.SetResourceReference(TextElement.BackgroundProperty, "MarkdownCodeBrush");
         paragraph.Padding = new Thickness(12, 9, 12, 9);
         paragraph.Margin = new Thickness(0, 3, 0, 10);
         return paragraph;
@@ -223,13 +241,16 @@ public sealed class MarkdownViewer : FlowDocumentScrollViewer
                     target.Add(lineBreak.IsHard ? new LineBreak() : new Run(" "));
                     break;
                 case CodeInline code:
-                    target.Add(new Run(code.Content)
+                {
+                    var run = new Run(code.Content)
                     {
                         FontFamily = new FontFamily("Cascadia Mono, Consolas"),
-                        FontSize = 13,
-                        Background = new SolidColorBrush(Color.FromRgb(238, 239, 242))
-                    });
+                        FontSize = 13
+                    };
+                    run.SetResourceReference(TextElement.BackgroundProperty, "MarkdownInlineCodeBrush");
+                    target.Add(run);
                     break;
+                }
                 case HtmlInline html:
                     target.Add(new Run(html.Tag));
                     break;
@@ -247,6 +268,7 @@ public sealed class MarkdownViewer : FlowDocumentScrollViewer
                 case LinkInline link when !link.IsImage:
                 {
                     var hyperlink = new Hyperlink();
+                    hyperlink.SetResourceReference(TextElement.ForegroundProperty, "MarkdownLinkBrush");
                     AddInlines(hyperlink.Inlines, link);
                     if (Uri.TryCreate(link.Url, UriKind.Absolute, out var uri) &&
                         (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))

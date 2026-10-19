@@ -2,57 +2,50 @@
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  Title="角色状态" Width="520" Height="650" MinWidth="460" MinHeight="460" MaxHeight="820"
- WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip" Background="{StaticResource WindowBrush}" ShowInTaskbar="False">
- <Window.Resources>
-  <LinearGradientBrush x:Key="StatusHeroBrush" StartPoint="0,0" EndPoint="1,1">
-   <GradientStop Color="#29264F" Offset="0"/><GradientStop Color="#4C468F" Offset="0.62"/><GradientStop Color="#6C63B5" Offset="1"/>
-  </LinearGradientBrush>
- </Window.Resources>
+ WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip" Background="{DynamicResource WindowBrush}" ShowInTaskbar="False" Foreground="{DynamicResource TextBrush}">
  <Grid Margin="20">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <Border Background="{StaticResource StatusHeroBrush}" CornerRadius="20" Padding="22">
-   <Border.Effect><DropShadowEffect Color="#29264F" BlurRadius="24" ShadowDepth="6" Opacity="0.22"/></Border.Effect>
+  <Border Background="{DynamicResource AccentTintBgBrush}" BorderBrush="{DynamicResource AccentTintBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="22">
    <Grid>
     <Grid.ColumnDefinitions><ColumnDefinition Width="68"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-    <Border Width="54" Height="54" CornerRadius="17" Background="#32FFFFFF" BorderBrush="#50FFFFFF" BorderThickness="1" VerticalAlignment="Top">
-     <TextBlock Text="{Binding CharacterName, Converter={StaticResource InitialsConverter}}" Foreground="{StaticResource OnAccentBrush}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+    <Border Width="54" Height="54" CornerRadius="27" Background="{DynamicResource AccentBrush}" BorderBrush="{DynamicResource AccentTintBorderBrush}" BorderThickness="1" VerticalAlignment="Top">
+     <TextBlock Text="{Binding CharacterName, Converter={StaticResource InitialsConverter}}" Foreground="{DynamicResource OnAccentBrush}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
     </Border>
     <StackPanel Grid.Column="1">
      <DockPanel>
-      <Border DockPanel.Dock="Right" Background="#28FFFFFF" CornerRadius="9" Padding="9,4" VerticalAlignment="Top">
-       <TextBlock Text="AI 动态状态" Foreground="{StaticResource OnAccentBrush}" FontSize="10" FontWeight="SemiBold"/>
+      <Border DockPanel.Dock="Right" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource AccentTintBorderBrush}" BorderThickness="1" CornerRadius="5" Padding="9,4" VerticalAlignment="Top">
+       <TextBlock Text="AI 动态状态" Foreground="{DynamicResource AccentTintTextBrush}" FontSize="10" FontWeight="SemiBold"/>
       </Border>
-      <TextBlock Text="{Binding CharacterName}" Foreground="{StaticResource OnAccentBrush}" FontSize="25" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+      <TextBlock Text="{Binding CharacterName}" FontFamily="Georgia, Cambria, SimSun" Foreground="{DynamicResource AccentDeepTextBrush}" FontSize="25" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
      </DockPanel>
-     <TextBlock Text="{Binding Summary}" Foreground="{StaticResource OnAccentBrush}" FontSize="13" TextWrapping="Wrap" LineHeight="20" Margin="0,11,0,0"/>
+     <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource MutedTextBrush}" FontSize="13" TextWrapping="Wrap" LineHeight="21" Margin="0,11,0,0"/>
     </StackPanel>
    </Grid>
   </Border>
   <DockPanel Grid.Row="1" Margin="4,22,4,11">
-   <Border DockPanel.Dock="Right" Background="{StaticResource AccentTintBgBrush}" CornerRadius="9" Padding="9,4">
-    <TextBlock Text="{Binding Attributes.Count, StringFormat={}{0} 项}" Foreground="{StaticResource AccentTintTextBrush}" FontSize="11" FontWeight="SemiBold"/>
+   <Border DockPanel.Dock="Right" Background="{DynamicResource AccentTintBgBrush}" CornerRadius="9" Padding="9,4">
+    <TextBlock Text="{Binding Attributes.Count, StringFormat={}{0} 项}" Foreground="{DynamicResource AccentTintTextBrush}" FontSize="11" FontWeight="SemiBold"/>
    </Border>
    <StackPanel Orientation="Horizontal">
-    <TextBlock Text="当前属性" FontSize="17" FontWeight="SemiBold"/>
-    <TextBlock Text="  随剧情自动变化" Foreground="{StaticResource SubtleTextBrush}" FontSize="11" VerticalAlignment="Center"/>
+    <TextBlock Text="当前属性" FontFamily="Georgia, Cambria, SimSun" FontSize="17" FontWeight="SemiBold"/>
+    <TextBlock Text="  随剧情自动变化" Foreground="{DynamicResource SubtleTextBrush}" FontSize="11" VerticalAlignment="Center"/>
    </StackPanel>
   </DockPanel>
   <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
    <ItemsControl ItemsSource="{Binding Attributes}">
     <ItemsControl.ItemTemplate><DataTemplate>
-     <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource NeutralBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="15" Margin="0,0,0,10">
-      <Border.Effect><DropShadowEffect Color="#1E1E2E" BlurRadius="10" ShadowDepth="2" Opacity="0.07"/></Border.Effect>
+     <Border Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource NeutralBorderBrush}" BorderThickness="1" CornerRadius="9" Padding="15" Margin="0,0,0,10">
       <Grid>
        <Grid.ColumnDefinitions><ColumnDefinition Width="26"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-       <Border Width="20" Height="20" CornerRadius="7" Background="{StaticResource AccentTintBgBrush}" VerticalAlignment="Top">
-        <TextBlock Text="◆" Foreground="{StaticResource AccentTintTextBrush}" FontSize="8" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+       <Border Width="20" Height="20" CornerRadius="7" Background="{DynamicResource AccentTintBgBrush}" VerticalAlignment="Top">
+        <TextBlock Text="◆" Foreground="{DynamicResource AccentTintTextBrush}" FontSize="8" HorizontalAlignment="Center" VerticalAlignment="Center"/>
        </Border>
        <StackPanel Grid.Column="1" Margin="8,0,16,0">
         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="14"/>
-        <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" FontSize="11" LineHeight="17" Margin="0,5,0,0" Visibility="{Binding Description, Converter={StaticResource StringToVisibility}}"/>
+        <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" LineHeight="17" Margin="0,5,0,0" Visibility="{Binding Description, Converter={StaticResource StringToVisibility}}"/>
        </StackPanel>
-       <Border Grid.Column="2" Background="{StaticResource AccentTintBgBrush}" BorderBrush="{StaticResource AccentTintBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="11,7" VerticalAlignment="Top">
-        <TextBlock Text="{Binding Value}" Foreground="{StaticResource AccentTintTextBrush}" FontWeight="SemiBold" FontSize="13" MaxWidth="160" TextWrapping="Wrap" TextAlignment="Right"/>
+       <Border Grid.Column="2" Background="{DynamicResource AccentTintBgBrush}" BorderBrush="{DynamicResource AccentTintBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="11,7" VerticalAlignment="Top">
+        <TextBlock Text="{Binding Value}" Foreground="{DynamicResource AccentTintTextBrush}" FontWeight="SemiBold" FontSize="13" MaxWidth="160" TextWrapping="Wrap" TextAlignment="Right"/>
        </Border>
       </Grid>
      </Border>
@@ -62,8 +55,8 @@
   <DockPanel Grid.Row="3" Margin="4,12,4,0">
    <Button DockPanel.Dock="Right" Content="完成" IsCancel="True" Style="{StaticResource PrimaryButtonStyle}" Padding="20,8" Margin="12,0,0,0"/>
    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-    <TextBlock Text="●" Foreground="{StaticResource SuccessTextBrush}" FontSize="9" VerticalAlignment="Center" Margin="0,0,7,0"/>
-    <TextBlock Text="{Binding UpdatedAt, StringFormat='更新于 {0:yyyy-MM-dd HH:mm}'}" Foreground="{StaticResource SubtleTextBrush}" FontSize="11" VerticalAlignment="Center"/>
+    <TextBlock Text="●" Foreground="{DynamicResource SuccessTextBrush}" FontSize="9" VerticalAlignment="Center" Margin="0,0,7,0"/>
+    <TextBlock Text="{Binding UpdatedAt, StringFormat='更新于 {0:yyyy-MM-dd HH:mm}'}" Foreground="{DynamicResource SubtleTextBrush}" FontSize="11" VerticalAlignment="Center"/>
    </StackPanel>
   </DockPanel>
  </Grid>

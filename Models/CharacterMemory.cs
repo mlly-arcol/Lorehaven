@@ -9,6 +9,8 @@ public sealed class CharacterMemory
     public long Id { get; set; }
     public long CharacterId { get; set; }
     public string Content { get; set; } = string.Empty;
+    /// <summary>Pinned facts may be edited by the writer, but automatic extraction never evicts them.</summary>
+    public bool IsLocked { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

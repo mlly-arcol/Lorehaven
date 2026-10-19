@@ -30,9 +30,10 @@ public sealed class ChatService(
 
     public Task<IReadOnlyList<ChatSession>> GetSessionsAsync() => sessionRepository.GetAllAsync();
 
-    /// <summary>Case-insensitive substring search across every conversation, newest match first.</summary>
-    public Task<IReadOnlyList<MessageSearchResult>> SearchMessagesAsync(string query, int limit = 50) =>
-        messageRepository.SearchAsync(query, limit);
+    /// <summary>Search or browse messages with optional conversation and pinned filters, newest first.</summary>
+    public Task<IReadOnlyList<MessageSearchResult>> SearchMessagesAsync(
+        string query, int limit = 50, long? sessionId = null, bool pinnedOnly = false) =>
+        messageRepository.SearchAsync(query, limit, sessionId, pinnedOnly);
 
     public async Task<ChatSession> GetOrCreateEmptySessionAsync() =>
         await sessionRepository.FindEmptyOrdinaryAsync() ?? await CreateSessionAsync();
@@ -50,9 +51,22 @@ public sealed class ChatService(
         title = title.Trim();
         if (title.Length == 0) throw new InvalidOperationException("对话标题不能为空。");
         if (title.Length > 120) throw new InvalidOperationException("对话标题不能超过 120 个字符。");
+        var updatedAt = DateTimeOffset.UtcNow;
+        if (!await sessionRepository.SetTitleAsync(session.Id, title, updatedAt))
+            throw new InvalidOperationException("对话已不存在。");
         session.Title = title;
-        session.UpdatedAt = DateTimeOffset.UtcNow;
-        await sessionRepository.UpdateAsync(session);
+        session.UpdatedAt = updatedAt;
+    }
+
+    public async Task<bool> TryUpdateSessionTitleAsync(ChatSession session, string expectedTitle, string title)
+    {
+        title = title.Trim();
+        if (title.Length is 0 or > 120) throw new InvalidOperationException("对话标题需为 1–120 个字符。");
+        var updatedAt = DateTimeOffset.UtcNow;
+        if (!await sessionRepository.SetTitleAsync(session.Id, title, updatedAt, expectedTitle)) return false;
+        session.Title = title;
+        session.UpdatedAt = updatedAt;
+        return true;
     }
 
     /// <summary>The recap goes into every later request, so a hand written one is capped by the service.</summary>
@@ -220,10 +234,12 @@ public sealed class ChatService(
 
     public Task<IReadOnlyList<ChatAttachment>> GetAttachmentsAsync(long messageId) => attachmentRepository.GetByMessageAsync(messageId);
 
-    public async Task<PromptBuildResult> GetPromptPreviewAsync(ChatSession session)
+    public async Task<PromptBuildResult> GetPromptPreviewAsync(
+        ChatSession session, IReadOnlyList<ChatMessage>? loadedMessages = null)
     {
         var settings = await LoadConfiguredSettingsAsync();
-        return await promptService.BuildAsync(session, await messageRepository.GetBySessionAsync(session.Id), settings);
+        var history = loadedMessages ?? await messageRepository.GetBySessionAsync(session.Id);
+        return await promptService.BuildAsync(session, history, settings);
     }
 
     public async Task<int> GetSwipeCountAsync(ChatMessage message) =>
@@ -441,6 +457,12 @@ public sealed class ChatService(
             session.UpdatedAt = assistant.UpdatedAt.Value;
             await sessionRepository.UpdateAsync(session);
         }
+        if (!string.IsNullOrWhiteSpace(assistant.Content) && !cancellationToken.IsCancellationRequested)
+        {
+            try { await summaryService.UpdateIfNeededAsync(session); }
+            catch (Exception ex) { logger.LogWarning(ex, "Automatic group summary update failed."); }
+            _ = memoryService.ExtractIfNeededAsync(session);
+        }
         return assistant;
     }
 
@@ -650,10 +672,18 @@ public sealed class ChatService(
             Role = "system",
             Content = "请先在内部组织本次回答的整体框架，再开始作答。使用清晰、完整且不过长的自然段；不要展示内部思考过程。"
         });
+        Dictionary<long, IReadOnlyList<ChatAttachment>> attachmentsByMessage = settings.IncludeImageContext
+            ? (await attachmentRepository.GetByMessageIdsAsync(
+                    prompt.Messages.Where(x => x.SourceMessageId.HasValue)
+                        .Select(x => x.SourceMessageId.GetValueOrDefault())))
+                .GroupBy(x => x.ChatMessageId)
+                .ToDictionary(x => x.Key, x => (IReadOnlyList<ChatAttachment>)x.ToList())
+            : new Dictionary<long, IReadOnlyList<ChatAttachment>>();
         foreach (var message in prompt.Messages)
         {
-            var images = settings.IncludeImageContext && message.SourceMessageId is long messageId
-                ? await AttachmentService.ToDataUrlsAsync(await attachmentRepository.GetByMessageAsync(messageId))
+            var images = message.SourceMessageId is long messageId &&
+                         attachmentsByMessage.TryGetValue(messageId, out var attachments)
+                ? await AttachmentService.ToDataUrlsAsync(attachments)
                 : [];
             messages.Add(new ChatCompletionMessage
             {

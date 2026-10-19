@@ -12,13 +12,13 @@ public sealed class TrayService : IDisposable
     {
         if (_icon is not null) return;
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Open NativeTavern", null, (_, _) => showWindow());
+        menu.Items.Add("Open Lorehaven", null, (_, _) => showWindow());
         menu.Items.Add("Exit", null, (_, _) => System.Windows.Application.Current.Shutdown());
         if (!string.IsNullOrWhiteSpace(Environment.ProcessPath))
             _ownedIcon = Icon.ExtractAssociatedIcon(Environment.ProcessPath);
         _icon = new NotifyIcon
         {
-            Text = "NativeTavern",
+            Text = "Lorehaven",
             Icon = _ownedIcon ?? SystemIcons.Application,
             ContextMenuStrip = menu,
             Visible = true

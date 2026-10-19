@@ -20,6 +20,28 @@ public sealed class ChatAttachmentRepository(DatabaseConnectionFactory connectio
         return rows.Select(x => new ChatAttachment { Id=x.Id, ChatMessageId=x.ChatMessageId, FileName=x.FileName, FilePath=x.FilePath, MimeType=x.MimeType, SizeBytes=x.SizeBytes, CreatedAt=DateTimeOffset.Parse(x.CreatedAt) }).ToList();
     }
 
+    /// <summary>Reads only the attachments referenced by a prompt in one query per SQLite parameter batch.</summary>
+    public async Task<IReadOnlyList<ChatAttachment>> GetByMessageIdsAsync(IEnumerable<long> messageIds)
+    {
+        var ids = messageIds.Distinct().ToArray();
+        if (ids.Length == 0) return [];
+        const int batchSize = 500;
+        var attachments = new List<ChatAttachment>();
+        await using var connection = connectionFactory.CreateConnection();
+        foreach (var batch in ids.Chunk(batchSize))
+        {
+            var rows = await connection.QueryAsync<Row>(
+                "SELECT * FROM ChatAttachments WHERE ChatMessageId IN @batch ORDER BY Id", new { batch });
+            attachments.AddRange(rows.Select(x => new ChatAttachment
+            {
+                Id = x.Id, ChatMessageId = x.ChatMessageId, FileName = x.FileName,
+                FilePath = x.FilePath, MimeType = x.MimeType, SizeBytes = x.SizeBytes,
+                CreatedAt = DateTimeOffset.Parse(x.CreatedAt)
+            }));
+        }
+        return attachments.OrderBy(x => x.Id).ToList();
+    }
+
     public async Task<IReadOnlyList<ChatAttachment>> GetBySessionAsync(long chatSessionId)
     {
         await using var connection = connectionFactory.CreateConnection();

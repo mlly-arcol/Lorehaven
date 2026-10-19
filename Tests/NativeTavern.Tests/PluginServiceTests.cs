@@ -27,6 +27,19 @@ public sealed class PluginServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CatalogSkipsNullEntriesAndRetainsValidListings()
+    {
+        var service = CreateService();
+        await service.InitializeAsync();
+        await File.WriteAllTextAsync(Path.Combine(root, "catalog.json"),
+            """{"formatVersion":1,"plugins":[null,{"id":"store.plugin","name":"Store Plugin","version":"1.0.0"}]}""");
+
+        var listing = Assert.Single(await service.GetCatalogAsync());
+
+        Assert.Equal("store.plugin", listing.Id);
+    }
+
+    [Fact]
     public async Task InstallsTogglesAndUninstallsPackage()
     {
         var package = CreatePackage("sample.plugin", "1.2.0");
@@ -39,6 +52,7 @@ public sealed class PluginServiceTests : IDisposable
 
         await service.SetEnabledAsync(installed.Id, false);
         Assert.False(Assert.Single(await service.GetInstalledAsync()).IsEnabled);
+        Assert.Null(await service.GetStateWarningAsync());
 
         await service.UninstallAsync(installed.Id);
         Assert.Empty(await service.GetInstalledAsync());
@@ -54,6 +68,147 @@ public sealed class PluginServiceTests : IDisposable
         Assert.True(await service.IsCapabilityEnabledAsync(PluginService.CharacterStatusCapability));
         await service.SetEnabledAsync(installed.Id, false);
         Assert.False(await service.IsCapabilityEnabledAsync(PluginService.CharacterStatusCapability));
+    }
+
+    [Fact]
+    public async Task DamagedMultiCapabilityPluginKeepsUserChoiceButLosesRuntimeCapabilities()
+    {
+        Directory.CreateDirectory(root);
+        var package = Path.Combine(root, "multi.ntplugin");
+        using (var archive = ZipFile.Open(package, ZipArchiveMode.Create))
+        {
+            WriteEntry(archive, "plugin.json", System.Text.Json.JsonSerializer.Serialize(new
+            {
+                id = "multi.plugin", name = "Multi", version = "1.0.0", author = "Tests",
+                description = "Test plugin", permissions = Array.Empty<string>(),
+                capabilities = new[]
+                {
+                    PluginService.CharacterStatusCapability,
+                    PluginService.PromptResourcesCapability
+                }
+            }));
+            WriteEntry(archive, "prompt-resources.json",
+                "{\"formatVersion\":1,\"personas\":[],\"lorebooks\":[],\"presets\":[],\"textRules\":[]}");
+        }
+
+        var service = CreateService();
+        await service.InstallPackageAsync(package);
+        Assert.True(await service.IsCapabilityEnabledAsync(PluginService.CharacterStatusCapability));
+        Assert.True(await service.IsCapabilityEnabledAsync(PluginService.PromptResourcesCapability));
+
+        await File.WriteAllTextAsync(Path.Combine(root, "multi.plugin", "prompt-resources.json"), "{invalid");
+
+        var displayed = Assert.Single(await service.GetInstalledAsync(validateContents: true));
+        Assert.True(displayed.IsEnabled);
+        Assert.NotNull(displayed.ValidationError);
+        Assert.Equal("配置无效", displayed.StateText);
+        Assert.False(await service.IsCapabilityEnabledAsync(PluginService.CharacterStatusCapability));
+        Assert.False(await service.IsCapabilityEnabledAsync(PluginService.PromptResourcesCapability));
+        Assert.Empty(await service.GetEnabledPluginsAsync(PluginService.CharacterStatusCapability));
+    }
+
+    [Theory]
+    [InlineData("{invalid")]
+    [InlineData("null")]
+    [InlineData("{\"status.plugin\":false,\"STATUS.PLUGIN\":true}")]
+    public async Task CorruptStateDisablesAllPluginsAndBlocksStateChanges(string corruptState)
+    {
+        var service = CreateService();
+        await service.InstallPackageAsync(CreatePackageWithCapability(
+            "status.plugin", "1.0.0", PluginService.CharacterStatusCapability));
+        await service.InstallPackageAsync(CreatePackage("other.plugin", "1.0.0"));
+        await service.SetEnabledAsync("status.plugin", false);
+
+        var statePath = Path.Combine(root, ".state.json");
+        await File.WriteAllTextAsync(statePath, corruptState);
+
+        var installed = await service.GetInstalledAsync();
+        Assert.Equal(2, installed.Count);
+        Assert.All(installed, plugin => Assert.False(plugin.IsEnabled));
+        Assert.False(await service.IsCapabilityEnabledAsync(PluginService.CharacterStatusCapability));
+        var warning = await service.GetStateWarningAsync();
+        Assert.NotNull(warning);
+        Assert.Contains("所有插件已临时停用", warning);
+
+        var toggleError = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            service.SetEnabledAsync("other.plugin", true));
+        Assert.Contains("状态文件", toggleError.Message);
+        var uninstallError = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            service.UninstallAsync("status.plugin"));
+        Assert.Contains("状态文件", uninstallError.Message);
+        Assert.Equal(corruptState, await File.ReadAllTextAsync(statePath));
+        Assert.True(Directory.Exists(Path.Combine(root, "status.plugin")));
+    }
+
+    [Fact]
+    public async Task UninstallHidesPluginBeforeNotifyingAndPreservesOtherStates()
+    {
+        var service = CreateService();
+        await service.InstallPackageAsync(CreatePackage("removed.plugin", "1.0.0"));
+        await service.InstallPackageAsync(CreatePackage("other.plugin", "1.0.0"));
+        await service.SetEnabledAsync("other.plugin", false);
+
+        var notificationSawHiddenPlugin = false;
+        service.PluginsChanged += () =>
+        {
+            Assert.False(Directory.Exists(Path.Combine(root, "removed.plugin")));
+            Assert.Single(Directory.EnumerateDirectories(root, ".pending-delete-*"));
+            notificationSawHiddenPlugin = true;
+        };
+
+        await service.UninstallAsync("removed.plugin");
+
+        Assert.True(notificationSawHiddenPlugin);
+        Assert.Empty(Directory.EnumerateDirectories(root, ".pending-delete-*"));
+        var remaining = Assert.Single(await service.GetInstalledAsync());
+        Assert.Equal("other.plugin", remaining.Id);
+        Assert.False(remaining.IsEnabled);
+    }
+
+    [Fact]
+    public async Task UninstallRestoresVisiblePluginWhenStateWriteFails()
+    {
+        var service = CreateService();
+        await service.InstallPackageAsync(CreatePackage("sample.plugin", "1.0.0"));
+        await service.SetEnabledAsync("sample.plugin", false);
+
+        var statePath = Path.Combine(root, ".state.json");
+        using var lockState = new FileStream(statePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var failure = await Record.ExceptionAsync(() => service.UninstallAsync("sample.plugin"));
+        Assert.True(failure is IOException or UnauthorizedAccessException,
+            $"Expected a file access failure, got {failure?.GetType().Name ?? "none"}.");
+
+        Assert.True(Directory.Exists(Path.Combine(root, "sample.plugin")));
+        Assert.Empty(Directory.EnumerateDirectories(root, ".pending-delete-*"));
+        Assert.False(Assert.Single(await service.GetInstalledAsync()).IsEnabled);
+    }
+
+    [Fact]
+    public async Task BundledPluginPackagesCanBeInstalled()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null &&
+               !File.Exists(Path.Combine(directory.FullName, "Lorehaven.csproj")))
+            directory = directory.Parent;
+        if (directory is null) return; // Source packages are absent beside a published test binary.
+
+        var service = CreateService();
+        var packages = new (string Id, string Capability)[]
+        {
+            ("nativetavern.dynamic-character-status", PluginService.CharacterStatusCapability),
+            ("nativetavern.story-prompts", PluginService.PromptResourcesCapability),
+            ("nativetavern.dice-random-tables", PluginService.DiceRandomTablesCapability),
+            ("nativetavern.story-timeline", PluginService.StoryTimelineCapability)
+        };
+        foreach (var (id, capability) in packages)
+        {
+            var path = Path.Combine(directory.FullName, "PluginPackages", id + ".ntplugin");
+            Assert.True(File.Exists(path), $"Missing distributable plugin: {path}");
+            var installed = await service.InstallPackageAsync(path);
+            Assert.Equal(id, installed.Id);
+            Assert.Contains(capability, installed.Manifest.Capabilities);
+        }
+        Assert.Equal(packages.Length, (await service.GetInstalledAsync(validateContents: true)).Count);
     }
 
     [Fact]

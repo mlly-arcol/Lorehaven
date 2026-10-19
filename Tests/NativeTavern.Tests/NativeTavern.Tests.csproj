@@ -15,6 +15,13 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\NativeTavern.csproj" />
+    <ProjectReference Include="..\..\Lorehaven.csproj" />
+    <ProjectReference Include="..\NativeTavern.TestModelServer\NativeTavern.TestModelServer.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+  <Target Name="CopyTestModelServer" AfterTargets="Build">
+    <ItemGroup>
+      <TestServerFiles Include="..\NativeTavern.TestModelServer\bin\$(Configuration)\net10.0-windows\NativeTavern.TestModelServer.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(TestServerFiles)" DestinationFolder="$(OutDir)ModelStub" />
+  </Target>
 </Project>

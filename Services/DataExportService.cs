@@ -77,7 +77,7 @@ public static class DataExportService
         var builder = new StringBuilder();
         builder.Append("# ").AppendLine(session.Title.Trim());
         builder.AppendLine();
-        builder.Append("> NativeTavern conversation exported ")
+        builder.Append("> Lorehaven conversation exported ")
             .AppendLine(DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss zzz"));
         if (session.ParentSessionId is not null)
             builder.AppendLine("> This conversation was created from a branch.");
@@ -101,6 +101,7 @@ public static class DataExportService
     {
         var export = new
         {
+            // Keep the schema identifier compatible with existing exported conversations.
             format = "nativetavern_conversation",
             version = 1,
             conversation = new
@@ -142,8 +143,8 @@ public static class DataExportService
             .Append("<title>").Append(EscapeHtml(title)).Append("</title>\n")
             .Append("<style>\n").Append(HtmlStyles).Append("\n</style>\n</head>\n<body>\n<main>\n");
 
-        builder.Append("<h1>").Append(EscapeHtml(string.IsNullOrEmpty(title) ? "NativeTavern" : title)).Append("</h1>\n");
-        builder.Append("<p class=\"meta\">NativeTavern · ")
+        builder.Append("<h1>").Append(EscapeHtml(string.IsNullOrEmpty(title) ? "Lorehaven" : title)).Append("</h1>\n");
+        builder.Append("<p class=\"meta\">Lorehaven · ")
             .Append(EscapeHtml(DateTime.Now.ToString("yyyy-MM-dd HH:mm")))
             .Append(" · ").Append(turns.Count).Append(" 条消息");
         if (session.ParentSessionId is not null) builder.Append(" · 派生自更早的对话");

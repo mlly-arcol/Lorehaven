@@ -1,0 +1,86 @@
+{
+  "Assets\\Journal\\harbor-header.png": {
+    "size": [
+      1536,
+      640
+    ],
+    "mode": "RGB",
+    "bytes": 1448332
+  },
+  "Assets\\Journal\\notes-decoration.png": {
+    "size": [
+      768,
+      768
+    ],
+    "mode": "RGB",
+    "bytes": 980683
+  },
+  "Assets\\Journal\\paper-texture.png": {
+    "size": [
+      1024,
+      1024
+    ],
+    "mode": "RGB",
+    "bytes": 1356888
+  },
+  "Assets\\Journal\\sidebar-decoration.png": {
+    "size": [
+      768,
+      768
+    ],
+    "mode": "RGB",
+    "bytes": 980683
+  },
+  "Assets\\NativeTavern.png": {
+    "size": [
+      1024,
+      1024
+    ],
+    "mode": "RGBA",
+    "bytes": 1143736,
+    "transparent_pixels": 237436,
+    "opaque_pixels": 1597,
+    "alpha_extrema": [
+      0,
+      255
+    ],
+    "corner_alpha": [
+      0,
+      0,
+      1,
+      0
+    ]
+  },
+  "Assets\\NativeTavern.ico": {
+    "sizes": [
+      [
+        16,
+        16
+      ],
+      [
+        24,
+        24
+      ],
+      [
+        32,
+        32
+      ],
+      [
+        48,
+        48
+      ],
+      [
+        64,
+        64
+      ],
+      [
+        128,
+        128
+      ],
+      [
+        256,
+        256
+      ]
+    ]
+  }
+}

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using NativeTavern.Data.Repositories;
 using NativeTavern.Models;
 
@@ -8,7 +9,10 @@ public sealed class PromptService(
     CharacterRepository characterRepository,
     ChatSessionRepository sessionRepository,
     KnowledgeService knowledgeService,
-    CharacterMemoryRepository? memoryRepository = null)
+    CharacterMemoryRepository? memoryRepository = null,
+    PluginPromptResourceService? pluginResources = null,
+    PluginResourceSelectionRepository? pluginResourceSelections = null,
+    ILogger<PromptService>? logger = null)
 {
     private const int MinimumKeptMessages = 2;
     private const int DefaultReplyTokens = 1024;
@@ -57,9 +61,11 @@ public sealed class PromptService(
         {
             if (session.IsGroupChat)
             {
-                foreach (var member in groupMembers)
-                    AddSection(sections, "Character Memory: " + member.Name,
-                        RenderMemories(await memoryRepository.GetByCharacterAsync(member.Id)));
+                // A private memory belongs to the current speaker. Sharing every member's memories
+                // here would let characters know facts they never learned.
+                if (groupMembers.FirstOrDefault(x => x.Id == speakingCharacterId) is { } memorySpeaker)
+                    AddSection(sections, "Character Memory: " + memorySpeaker.Name,
+                        RenderMemories(await memoryRepository.GetByCharacterAsync(memorySpeaker.Id)));
             }
             else if (session.CharacterId is long memoryCharacterId &&
                      await characterRepository.GetAsync(memoryCharacterId) is { } memoryCharacter)
@@ -92,6 +98,20 @@ public sealed class PromptService(
             {
                 var knowledge = await knowledgeService.SearchAsync(latestUserText);
                 if (knowledge.Count > 0) AddSection(sections, "Knowledge Base", string.Join("\n\n---\n\n", knowledge));
+            }
+        }
+        if (pluginResources is not null && pluginResourceSelections is not null)
+        {
+            try
+            {
+                var selected = await pluginResourceSelections.GetAsync(session.Id);
+                foreach (var section in await pluginResources.GetActiveSectionsAsync(session, historyList, selected))
+                    AddSection(sections, section.Heading, section.Content);
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+            {
+                // A damaged plugin must not interrupt an ordinary chat request.
+                logger?.LogWarning(ex, "Skipping prompt resources for session {SessionId}.", session.Id);
             }
         }
         if (!string.IsNullOrWhiteSpace(session.Summary)) AddSection(sections, "Conversation Summary", session.Summary);
@@ -185,7 +205,9 @@ public sealed class PromptService(
     }
 
     private static string RenderMemories(IReadOnlyList<CharacterMemory> memories) =>
-        memories.Count == 0 ? string.Empty : string.Join("\n", memories.Select(x => "- " + x.Content));
+        memories.Count == 0 ? string.Empty : string.Join("\n", memories
+            .OrderByDescending(x => x.IsLocked).ThenBy(x => x.Id)
+            .Select(x => (x.IsLocked ? "- [Locked fact] " : "- ") + x.Content));
 
     private static string BuildCharacterContext(Character character)
     {

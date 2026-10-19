@@ -1,6 +1,8 @@
 using System.Runtime.ExceptionServices;
 using System.Threading;
+using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Media;
 using NativeTavern.Controls;
 using Xunit;
 
@@ -61,6 +63,52 @@ public sealed class MarkdownViewerTests
             var text = new TextRange(paragraph.ContentStart, paragraph.ContentEnd).Text;
             Assert.Contains("<b>", text);
             Assert.Contains("</b>", text);
+        });
+    }
+
+    [Fact]
+    public void RenderedMarkdownFollowsThemeResourceReplacement()
+    {
+        RunSta(() =>
+        {
+            var viewer = new MarkdownViewer
+            {
+                Markdown = "> Quote\n\n---\n\n`inline`\n\n```\ncode\n```\n\n[link](https://example.com)"
+            };
+            viewer.RenderNow();
+            var document = viewer.Document;
+            string[] resourceKeys =
+            [
+                "MarkdownQuoteBorderBrush", "MarkdownQuoteTextBrush", "MarkdownRuleBrush",
+                "MarkdownCodeBrush", "MarkdownInlineCodeBrush", "MarkdownLinkBrush"
+            ];
+            var firstBrush = new SolidColorBrush(Colors.DarkSlateBlue);
+            foreach (var key in resourceKeys) document.Resources[key] = firstBrush;
+
+            var quote = Assert.IsType<Section>(document.Blocks.FirstBlock);
+            var rule = Assert.IsType<Border>(document.Blocks.OfType<BlockUIContainer>().Single().Child);
+            var inlineCode = document.Blocks.OfType<Paragraph>().SelectMany(paragraph => paragraph.Inlines.OfType<Run>())
+                .Single(run => run.Text == "inline");
+            var code = document.Blocks.OfType<Paragraph>()
+                .Single(paragraph => paragraph.Inlines.OfType<Run>().Any(run => run.Text == "code"));
+            var link = document.Blocks.OfType<Paragraph>().SelectMany(paragraph => paragraph.Inlines.OfType<Hyperlink>()).Single();
+
+            Assert.Same(firstBrush, quote.BorderBrush);
+            Assert.Same(firstBrush, quote.Foreground);
+            Assert.Same(firstBrush, rule.Background);
+            Assert.Same(firstBrush, code.Background);
+            Assert.Same(firstBrush, inlineCode.Background);
+            Assert.Same(firstBrush, link.Foreground);
+
+            var replacementBrush = new SolidColorBrush(Colors.PaleGoldenrod);
+            foreach (var key in resourceKeys) document.Resources[key] = replacementBrush;
+
+            Assert.Same(replacementBrush, quote.BorderBrush);
+            Assert.Same(replacementBrush, quote.Foreground);
+            Assert.Same(replacementBrush, rule.Background);
+            Assert.Same(replacementBrush, code.Background);
+            Assert.Same(replacementBrush, inlineCode.Background);
+            Assert.Same(replacementBrush, link.Foreground);
         });
     }
 

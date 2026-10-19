@@ -20,15 +20,47 @@ public partial class ChatView : UserControl
     private readonly DispatcherTimer _autoScrollTimer;
     private readonly HashSet<ChatMessageViewModel> _subscribedMessages = [];
     private double _smoothScrollTarget;
+    private bool _notesRequested;
+    private bool _wideNotes;
 
     private void ChatLayout_OnSizeChanged(object sender, SizeChangedEventArgs e)
     {
         // Use the available content area in WPF units, so this also works at high DPI.
-        var compact = e.NewSize.Width < 760 || e.NewSize.Height < 600;
-        var inset = compact ? 16 : 28;
-        ConversationHeader.Padding = new Thickness(inset, compact ? 12 : 18, inset, 14);
+        var compact = e.NewSize.Width < 850 || e.NewSize.Height < 650;
+        var inset = compact ? 14 : 24;
+        _wideNotes = e.NewSize.Width >= 1010 && e.NewSize.Height >= 650;
+        NotesColumn.Width = new GridLength(_wideNotes ? 270 : 0);
+        Grid.SetColumn(NotesPanel, _wideNotes ? 1 : 0);
+        Grid.SetColumnSpan(NotesPanel, _wideNotes ? 1 : 2);
+        NotesPanel.HorizontalAlignment = _wideNotes ? HorizontalAlignment.Stretch : HorizontalAlignment.Right;
+        NotesPanel.Width = _wideNotes ? double.NaN : 280;
+        NotesPanel.Visibility = _wideNotes || _notesRequested ? Visibility.Visible : Visibility.Collapsed;
+        NotesCloseButton.Visibility = _wideNotes ? Visibility.Collapsed : Visibility.Visible;
+        NotesToggleButton.Visibility = _wideNotes ? Visibility.Collapsed : Visibility.Visible;
+        ConversationHeader.Margin = new Thickness(8, compact ? 8 : 10, 8, 0);
+        ConversationKicker.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        StoryTitleText.FontSize = compact ? 24 : 32;
+        StoryDescription.MaxHeight = compact ? 21 : 44;
+        HeaderArtwork.Height = compact ? 150 : 210;
+        HeaderArtwork.Width = Math.Min(600, Math.Max(240, e.NewSize.Width - (_wideNotes ? 270 : 0)));
+        ComposerKeyboardHint.Visibility = e.NewSize.Width < 680 ? Visibility.Collapsed : Visibility.Visible;
+        EmptyBrandTile.Width = EmptyBrandTile.Height = compact ? 62 : 80;
+        EmptyFeatureRibbon.Visibility = e.NewSize.Height < 650 ? Visibility.Collapsed : Visibility.Visible;
         ComposerArea.Margin = new Thickness(inset, 8, inset, compact ? 10 : 20);
         ComposerInputBox.MaxHeight = Math.Clamp(e.NewSize.Height * 0.22, 72, 160);
+    }
+
+    private void ToggleNotes_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_wideNotes) return;
+        _notesRequested = !_notesRequested;
+        NotesPanel.Visibility = _notesRequested ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void ToggleTools_OnClick(object sender, RoutedEventArgs e)
+    {
+        ConversationTools.IsExpanded = !ConversationTools.IsExpanded;
+        if (ConversationTools.IsExpanded) ConversationSearchBox.Focus();
     }
 
     private void ConversationMore_OnClick(object sender, RoutedEventArgs e)
@@ -271,7 +303,7 @@ public partial class ChatView : UserControl
         try { await _viewModel.RenameCurrentConversationAsync(title); }
         catch (InvalidOperationException ex)
         {
-            MessageBox.Show(ex.Message, "NativeTavern", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(ex.Message, "Lorehaven", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -293,13 +325,13 @@ public partial class ChatView : UserControl
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
-            MessageBox.Show("导出失败：" + ex.Message, "NativeTavern", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show("导出失败：" + ex.Message, "Lorehaven", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
     private async void EditGroupChat_OnClick(object sender, RoutedEventArgs e)
     {
-        if (_viewModel is not { IsGroupChat: true }) return;
+        if (_viewModel is not { IsGroupChat: true } || _viewModel.IsGenerating || _viewModel.IsGroupPerformanceRunning) return;
         var characters = await _viewModel.GetAllCharactersAsync();
         var dialog = CharacterGroupDialog.ShowGroupChat(
             this,
@@ -312,7 +344,7 @@ public partial class ChatView : UserControl
 
     private async void PromptSettings_OnClick(object sender, RoutedEventArgs e)
     {
-        if (_viewModel is null || _viewModel.IsGenerating) return;
+        if (_viewModel is null || _viewModel.IsGenerating || _viewModel.IsGroupPerformanceRunning) return;
         var dialog = ChatPromptSettingsDialog.Show(this, _viewModel);
         if (dialog is not null)
             await _viewModel.UpdatePromptContextAsync(
@@ -321,6 +353,76 @@ public partial class ChatView : UserControl
                 dialog.SelectedPreset,
                 dialog.AuthorNote,
                 dialog.GroupName);
+    }
+
+    private async void PluginResources_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel?.CurrentSession is null || !_viewModel.CanModifyConversation) return;
+        var session = _viewModel.CurrentSession;
+        var owner = Window.GetWindow(this);
+        if (owner is null) return;
+        try
+        {
+            var resources = await _viewModel.GetPluginPromptResourcesAsync();
+            if (_viewModel.CurrentSession?.Id != session.Id) return;
+            var selected = await _viewModel.GetSelectedPluginPromptResourceIdsAsync();
+            var english = await _viewModel.IsEnglishAsync();
+            if (_viewModel.CurrentSession?.Id != session.Id) return;
+            var next = PluginPromptResourcesDialog.Show(owner, resources, selected, session.IsGroupChat, english);
+            if (next is not null) await _viewModel.SaveSelectedPluginPromptResourcesAsync(next, session.Id);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(owner, ex.Message, "Lorehaven", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async void DiceRandom_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel?.CurrentSession is null || !_viewModel.CanModifyConversation) return;
+        var owner = Window.GetWindow(this);
+        if (owner is null) return;
+        try
+        {
+            var english = await _viewModel.IsEnglishAsync();
+            if (!await _viewModel.IsDicePluginEnabledAsync())
+            {
+                MessageBox.Show(owner, english
+                        ? "Install and enable Dice and random tables in Plugins first."
+                        : "请先在插件中心安装并启用“掷骰与随机表”。", "Lorehaven",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            new DiceRandomDialog(_viewModel, english) { Owner = owner }.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(owner, ex.Message, "Lorehaven", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async void StoryTimeline_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel?.CurrentSession is null || !_viewModel.CanModifyConversation) return;
+        var owner = Window.GetWindow(this);
+        if (owner is null) return;
+        try
+        {
+            var english = await _viewModel.IsEnglishAsync();
+            if (!await _viewModel.IsStoryTimelinePluginEnabledAsync())
+            {
+                MessageBox.Show(owner, english
+                        ? "Install and enable Story timeline in Plugins first."
+                        : "请先在插件中心安装并启用“剧情事件时间线”。", "Lorehaven",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            new StoryTimelineDialog(_viewModel, english) { Owner = owner }.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(owner, ex.Message, "Lorehaven", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private void NextSpeaker_OnClick(object sender, RoutedEventArgs e)
@@ -333,6 +435,55 @@ public partial class ChatView : UserControl
         foreach (var member in _viewModel.GroupMembers) AddSpeakerItem(menu, member.Name, member);
         button.ContextMenu = menu;
         menu.IsOpen = true;
+    }
+
+    private async void GroupPerformance_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null || !_viewModel.CanConfigureGroupPerformance) return;
+        var dialog = new GroupPerformanceDialog(_viewModel.GroupMembers.ToArray(), await _viewModel.IsEnglishAsync())
+        {
+            Owner = Window.GetWindow(this)
+        };
+        if (dialog.ShowDialog() != true) return;
+        try { await _viewModel.StartGroupPerformanceAsync(dialog.Rounds, dialog.SpeakerOrder); }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "Lorehaven", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async void ConversationBranches_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel?.CurrentSession is not { } current || _viewModel.IsGenerating || _viewModel.IsGroupPerformanceRunning) return;
+        try
+        {
+            var sessions = await _viewModel.GetConversationBranchesAsync();
+            var dialog = new ConversationBranchesDialog(sessions, current.Id, await _viewModel.IsEnglishAsync())
+            {
+                Owner = Window.GetWindow(this)
+            };
+            if (dialog.ShowDialog() == true && dialog.SelectedSessionId is long selectedId)
+                await _viewModel.OpenConversationBranchAsync(selectedId);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "Lorehaven", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async void ManageMemories_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        try
+        {
+            var english = await _viewModel.IsEnglishAsync();
+            await _viewModel.ManageMemoriesAsync((characters, service, selectedId) =>
+                CharacterMemoryDialog.Show(this, characters, service, selectedId, english));
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "Lorehaven", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private void AddSpeakerItem(ContextMenu menu, string label, NativeTavern.Models.Character? character)

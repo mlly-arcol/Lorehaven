@@ -6,6 +6,7 @@ namespace NativeTavern.Security;
 
 public sealed class DpapiSecretProtector(ILogger<DpapiSecretProtector> logger) : ISecretProtector
 {
+    // Keep the original entropy so API keys saved before the Lorehaven rename still decrypt.
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("NativeTavern.ProviderSettings.v1");
 
     public string Protect(string plaintext)

@@ -1,0 +1,54 @@
+<Window x:Class="NativeTavern.Views.PluginPromptResourcesDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="插件提示词资源" Width="620" Height="570" MinWidth="460" MinHeight="360"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" ResizeMode="CanResizeWithGrip"
+        Background="{DynamicResource WindowBrush}" Foreground="{DynamicResource TextBrush}"
+        FontFamily="Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI">
+    <Grid Margin="22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock x:Name="Heading" Text="插件提示词资源" FontFamily="Georgia, Cambria, SimSun"
+                   FontSize="24" FontWeight="SemiBold"/>
+        <TextBlock x:Name="Hint" Grid.Row="1" Margin="0,7,0,16" TextWrapping="Wrap"
+                   Foreground="{DynamicResource MutedTextBrush}"
+                   Text="勾选的资源只在当前对话中生效。停用插件后不会删除你的选择；再次启用即可恢复。每次最多应用 12 段或 12000 字，超出时按应用顺序省略后续内容。"/>
+        <Border Grid.Row="2" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="1" CornerRadius="12" Padding="12">
+            <Grid>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding Choices}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                                        BorderThickness="1" CornerRadius="9" Padding="12" Margin="0,0,0,9">
+                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" IsEnabled="{Binding CanSelect}"
+                                              VerticalContentAlignment="Center">
+                                        <StackPanel Margin="5,0,0,0">
+                                            <TextBlock Text="{Binding Label}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                            <TextBlock Text="{Binding Preview}" Foreground="{DynamicResource MutedTextBrush}"
+                                                       TextWrapping="Wrap" MaxHeight="54" Margin="0,5,0,0"/>
+                                            <TextBlock Text="{Binding StateLabel}" Foreground="{DynamicResource SubtleTextBrush}"
+                                                       FontSize="11" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </CheckBox>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+                <TextBlock x:Name="EmptyHint" Text="尚无可选资源。先在插件中心安装提示词资源包。"
+                           Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+            </Grid>
+        </Border>
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button x:Name="CancelButton" Content="取消" Click="Cancel_OnClick" Margin="0,0,8,0"/>
+            <Button x:Name="SaveButton" Content="应用" Style="{StaticResource PrimaryButtonStyle}" Click="Save_OnClick"/>
+        </StackPanel>
+    </Grid>
+</Window>

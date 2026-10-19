@@ -11,6 +11,7 @@ public sealed class PromptResourceService(
     RegexScriptRepository scriptRepository,
     RegexScriptService regexScriptService)
 {
+    // The file-format identifier remains stable across the Lorehaven product rename.
     public const string PackFormat = "nativetavern_prompt_pack";
     public const int PackVersion = 1;
     private const long MaxImportFileSize = 20 * 1024 * 1024;

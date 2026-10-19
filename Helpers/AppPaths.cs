@@ -13,8 +13,9 @@ public static class AppPaths
     public static string DocumentsDirectory => Path.Combine(Root, "Documents");
     public static string PluginsDirectory => Path.Combine(Root, "Plugins");
     public static string PluginDataDirectory => Path.Combine(Root, "PluginData");
+    // Keep the existing library filename so upgrades reuse all saved conversations.
     public static string DatabaseFile => Path.Combine(DataDirectory, "NativeTavern.db");
-    public static string LogFile => Path.Combine(LogsDirectory, "NativeTavern.log");
+    public static string LogFile => Path.Combine(LogsDirectory, "Lorehaven.log");
 
     // Lets non-desktop hosts (e.g. the MAUI Android app) redirect all managed data
     // to their own storage. Must be called before any path is read; the desktop
@@ -27,7 +28,9 @@ public static class AppPaths
         var applicationDirectory = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
         var parent = Directory.GetParent(applicationDirectory)?.FullName;
         return string.Equals(Path.GetFileName(applicationDirectory), "publish", StringComparison.OrdinalIgnoreCase) &&
-               parent is not null && File.Exists(Path.Combine(parent, "NativeTavern.csproj"))
+               parent is not null &&
+               (File.Exists(Path.Combine(parent, "Lorehaven.csproj")) ||
+                File.Exists(Path.Combine(parent, "NativeTavern.csproj")))
             ? parent
             : applicationDirectory;
     }

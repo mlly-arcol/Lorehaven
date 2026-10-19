@@ -19,6 +19,7 @@ public partial class PluginsViewModel(PluginService pluginService, ILogger<Plugi
 
     [ObservableProperty] private string _searchText = string.Empty;
     [ObservableProperty] private string? _statusMessage;
+    [ObservableProperty] private string _stateWarning = string.Empty;
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private bool _isMarketplaceSelected = true;
     [ObservableProperty] private bool _hasMarketplacePlugins;
@@ -32,10 +33,11 @@ public partial class PluginsViewModel(PluginService pluginService, ILogger<Plugi
         IsBusy = true;
         try
         {
-            allInstalled = await pluginService.GetInstalledAsync();
+            allInstalled = await pluginService.GetInstalledAsync(validateContents: true);
+            StateWarning = await pluginService.GetStateWarningAsync() ?? string.Empty;
             allMarketplace = await pluginService.GetCatalogAsync();
             ApplyFilter();
-            StatusMessage = "插件目录已刷新。";
+            StatusMessage = string.IsNullOrEmpty(StateWarning) ? "插件目录已刷新。" : "插件状态文件需要恢复。";
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
         {
@@ -51,7 +53,9 @@ public partial class PluginsViewModel(PluginService pluginService, ILogger<Plugi
         try
         {
             var plugin = await pluginService.InstallPackageAsync(path);
-            StatusMessage = $"已安装并启用 {plugin.Name} {plugin.Version}。";
+            StatusMessage = plugin.IsEnabled
+                ? $"已安装并启用 {plugin.Name} {plugin.Version}。"
+                : $"已更新 {plugin.Name} {plugin.Version}；仍保持停用。";
             await ReloadListsAsync();
             IsMarketplaceSelected = false;
         }
@@ -98,6 +102,7 @@ public partial class PluginsViewModel(PluginService pluginService, ILogger<Plugi
         {
             logger.LogWarning(ex, "Could not change plugin state for {PluginId}", plugin.Id);
             StatusMessage = ex.Message;
+            StateWarning = await pluginService.GetStateWarningAsync() ?? string.Empty;
         }
         finally { IsBusy = false; }
     }
@@ -115,6 +120,7 @@ public partial class PluginsViewModel(PluginService pluginService, ILogger<Plugi
         {
             logger.LogWarning(ex, "Could not uninstall plugin {PluginId}", plugin.Id);
             StatusMessage = ex.Message;
+            StateWarning = await pluginService.GetStateWarningAsync() ?? string.Empty;
         }
         finally { IsBusy = false; }
     }
@@ -129,7 +135,8 @@ public partial class PluginsViewModel(PluginService pluginService, ILogger<Plugi
 
     private async Task ReloadListsAsync()
     {
-        allInstalled = await pluginService.GetInstalledAsync();
+        allInstalled = await pluginService.GetInstalledAsync(validateContents: true);
+        StateWarning = await pluginService.GetStateWarningAsync() ?? string.Empty;
         allMarketplace = await pluginService.GetCatalogAsync();
         ApplyFilter();
     }

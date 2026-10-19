@@ -1,14 +1,17 @@
 using Microsoft.Data.Sqlite;
 using NativeTavern.Services;
 using System.IO.Compression;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace NativeTavern.Tests;
 
 public sealed class BackupServiceTests
 {
-    [Fact]
-    public async Task BackupAndRestoreRoundTripDatabaseAndManagedFiles()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BackupAndRestoreRoundTripDatabaseAndManagedFiles(bool legacyBrand)
     {
         var parent = Path.Combine(Path.GetTempPath(), "NativeTavernBackupTest-" + Guid.NewGuid().ToString("N"));
         var root = Path.Combine(parent, "UserData");
@@ -27,6 +30,22 @@ public sealed class BackupServiceTests
             var service = new BackupService(root);
 
             await service.CreateAsync(backup);
+            using (var archive = ZipFile.Open(backup, ZipArchiveMode.Update))
+            {
+                var manifestEntry = archive.GetEntry("backup.json")!;
+                JsonObject manifest;
+                using (var reader = new StreamReader(manifestEntry.Open()))
+                    manifest = JsonNode.Parse(await reader.ReadToEndAsync())!.AsObject();
+                Assert.Equal("LorehavenBackup", manifest["format"]!.GetValue<string>());
+                Assert.NotNull(archive.GetEntry("UserData/Data/NativeTavern.db"));
+                if (legacyBrand)
+                {
+                    manifestEntry.Delete();
+                    manifest["format"] = "NativeTavernBackup";
+                    await using var writer = new StreamWriter(archive.CreateEntry("backup.json").Open());
+                    await writer.WriteAsync(manifest.ToJsonString());
+                }
+            }
             await ExecuteAsync(database, "DELETE FROM Sample; INSERT INTO Sample VALUES('after');");
             await File.WriteAllTextAsync(avatar, "avatar-after");
             await File.WriteAllTextAsync(plugin, "plugin-after");
@@ -40,6 +59,7 @@ public sealed class BackupServiceTests
             Assert.False(File.Exists(staleAvatar));
             Assert.Equal("plugin-before", await File.ReadAllTextAsync(plugin));
             Assert.True(File.Exists(safetyBackup));
+            Assert.StartsWith("Lorehaven-before-restore-", Path.GetFileName(safetyBackup));
         }
         finally
         {
@@ -48,7 +68,7 @@ public sealed class BackupServiceTests
     }
 
     [Fact]
-    public async Task RestoreRejectsArchiveWithoutNativeTavernManifest()
+    public async Task RestoreRejectsArchiveWithoutBackupManifest()
     {
         var parent = Path.Combine(Path.GetTempPath(), "NativeTavernBackupTest-" + Guid.NewGuid().ToString("N"));
         var root = Path.Combine(parent, "UserData");
@@ -67,6 +87,43 @@ public sealed class BackupServiceTests
 
             var service = new BackupService(root);
             await Assert.ThrowsAsync<InvalidDataException>(() => service.RestoreAsync(archivePath));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(parent)) Directory.Delete(parent, true);
+        }
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("{not-json")]
+    [InlineData("{\"format\":\"NativeTavernBackup\",\"version\":1,\"userDataRoot\":42}")]
+    [InlineData("{\"format\":\"LorehavenBackup\",\"version\":1,\"userDataRoot\":42}")]
+    public async Task InvalidManifestIsRejectedBeforeLiveDataChanges(string manifest)
+    {
+        var parent = Path.Combine(Path.GetTempPath(), "NativeTavernBackupTest-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(parent, "UserData");
+        var database = Path.Combine(root, "Data", "NativeTavern.db");
+        var archivePath = Path.Combine(parent, "invalid.zip");
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(database)!);
+            await ExecuteAsync(database, "CREATE TABLE Sample(Value TEXT); INSERT INTO Sample VALUES('backup');");
+            var service = new BackupService(root);
+            await service.CreateAsync(archivePath);
+            using (var archive = ZipFile.Open(archivePath, ZipArchiveMode.Update))
+            {
+                archive.GetEntry("backup.json")!.Delete();
+                await using var writer = new StreamWriter(archive.CreateEntry("backup.json").Open());
+                await writer.WriteAsync(manifest);
+            }
+            await ExecuteAsync(database, "DELETE FROM Sample; INSERT INTO Sample VALUES('current');");
+
+            await Assert.ThrowsAsync<InvalidDataException>(() => service.RestoreAsync(archivePath));
+
+            Assert.Equal("current", await ScalarAsync(database, "SELECT Value FROM Sample"));
+            Assert.Empty(Directory.EnumerateFiles(parent, "Lorehaven-before-restore-*.zip"));
         }
         finally
         {

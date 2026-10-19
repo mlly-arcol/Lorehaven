@@ -39,7 +39,7 @@ public sealed class CharacterStatusService(
         if (!settings.IsConfigured) return await statusRepository.GetAsync(session.Id, characterId);
 
         var current = await statusRepository.GetAsync(session.Id, characterId);
-        var history = (await messageRepository.GetBySessionAsync(session.Id)).TakeLast(HistoryLimit).ToList();
+        var history = await messageRepository.GetRecentBySessionAsync(session.Id, HistoryLimit);
         var request = BuildRequest(character, history, current, settings);
         var response = new StringBuilder();
         try

@@ -1,0 +1,39 @@
+{
+  "formatVersion": 1,
+  "tables": [
+    {
+      "id": "scene-weather",
+      "name": "场景天气",
+      "description": "为当前场景抽取一种天气。",
+      "entries": [
+        { "text": "晴朗，能见度很好。", "weight": 4 },
+        { "text": "阴天，云层低垂。", "weight": 3 },
+        { "text": "细雨，地面开始湿滑。", "weight": 2 },
+        { "text": "暴雨，远处几乎无法看清。", "weight": 1 }
+      ]
+    },
+    {
+      "id": "unexpected-encounter",
+      "name": "意外遭遇",
+      "description": "为旅途或探索添加一个简短事件。",
+      "entries": [
+        { "text": "一名路人主动提供线索。", "weight": 3 },
+        { "text": "发现一件被遗落的小物品。", "weight": 3 },
+        { "text": "原定路线被临时封锁。", "weight": 2 },
+        { "text": "旧识在不合时宜的时刻出现。", "weight": 1 },
+        { "text": "听到一个与当前目标有关的传闻。", "weight": 2 }
+      ]
+    },
+    {
+      "id": "character-mood",
+      "name": "角色心情",
+      "description": "抽取一个可以手动用于角色演出的情绪提示。",
+      "entries": [
+        { "text": "轻松而好奇。", "weight": 3 },
+        { "text": "谨慎，留意周围的变化。", "weight": 3 },
+        { "text": "心事重重，却不愿说明原因。", "weight": 2 },
+        { "text": "兴奋，想立刻采取行动。", "weight": 2 }
+      ]
+    }
+  ]
+}

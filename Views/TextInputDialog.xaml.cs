@@ -33,7 +33,7 @@ public partial class TextInputDialog : Window
     {
         if (Value.Length == 0)
         {
-            MessageBox.Show("标题不能为空。", "NativeTavern", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show("标题不能为空。", "Lorehaven", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         DialogResult = true;

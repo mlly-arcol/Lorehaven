@@ -1,0 +1,76 @@
+<Window x:Class="NativeTavern.Views.StoryTimelineDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="剧情事件时间线" Width="780" Height="620" MinWidth="580" MinHeight="420"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" ResizeMode="CanResizeWithGrip"
+        Background="{DynamicResource WindowBrush}" Foreground="{DynamicResource TextBrush}"
+        FontFamily="Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI"
+        Loaded="Dialog_OnLoaded" Closed="Dialog_OnClosed">
+    <Grid Margin="22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock x:Name="Heading" Text="剧情事件时间线" FontFamily="Georgia, Cambria, SimSun"
+                   FontSize="24" FontWeight="SemiBold"/>
+        <TextBlock x:Name="Hint" Grid.Row="1" Margin="0,7,0,16" TextWrapping="Wrap"
+                   Foreground="{DynamicResource MutedTextBrush}"
+                   Text="手动记录关键事件，或按需调用当前模型提取新事件。模型提取可能产生费用；结果可编辑。"/>
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="280"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Border Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="8" Margin="0,0,12,0">
+                <Grid>
+                    <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                    <ListBox x:Name="EventList" SelectionChanged="EventList_OnSelectionChanged"
+                             Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="8,6">
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource MutedTextBrush}"
+                                               TextWrapping="Wrap" MaxHeight="42" Margin="0,3,0,0"/>
+                                    <TextBlock Text="{Binding CreatedAt, StringFormat={}{0:yyyy-MM-dd HH:mm}}"
+                                               Foreground="{DynamicResource SubtleTextBrush}" FontSize="10" Margin="0,3,0,0"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <Button x:Name="ExtractButton" Grid.Row="1" Content="用 AI 提取新事件" Click="Extract_OnClick"
+                            HorizontalAlignment="Stretch" Margin="4,8,4,4"/>
+                </Grid>
+            </Border>
+            <Border Grid.Column="1" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="16">
+                <Grid>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                    <TextBlock x:Name="EditorHeading" Text="事件内容" FontWeight="SemiBold" FontSize="16"/>
+                    <TextBlock x:Name="TitleLabel" Grid.Row="1" Text="标题" Margin="0,14,0,5"/>
+                    <TextBox x:Name="TitleBox" Grid.Row="2" MaxLength="80"/>
+                    <Grid Grid.Row="3" Margin="0,12,0,0">
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                        <TextBlock x:Name="DetailLabel" Text="说明" Margin="0,0,0,5"/>
+                        <TextBox x:Name="DetailBox" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap"
+                                 MaxLength="400" VerticalScrollBarVisibility="Auto"/>
+                    </Grid>
+                    <CheckBox x:Name="AnchorBox" Grid.Row="4" Content="关联到当前最后一条消息，方便跳转"
+                              Margin="0,12,0,0"/>
+                    <WrapPanel Grid.Row="5" HorizontalAlignment="Right" Margin="0,14,0,0">
+                        <Button x:Name="NewButton" Content="新建" Click="New_OnClick" Margin="0,0,7,6"/>
+                        <Button x:Name="OpenButton" Content="跳转消息" Click="Open_OnClick" IsEnabled="False" Margin="0,0,7,6"/>
+                        <Button x:Name="DeleteButton" Content="删除" Click="Delete_OnClick" IsEnabled="False" Margin="0,0,7,6"/>
+                        <Button x:Name="SaveButton" Content="保存" Style="{StaticResource PrimaryButtonStyle}"
+                                Click="Save_OnClick" Margin="0,0,0,6"/>
+                    </WrapPanel>
+                </Grid>
+            </Border>
+        </Grid>
+        <DockPanel Grid.Row="3" Margin="0,14,0,0">
+            <Button x:Name="CloseButton" DockPanel.Dock="Right" Content="关闭" Click="Close_OnClick"/>
+            <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextWrapping="Wrap"
+                       Foreground="{DynamicResource MutedTextBrush}"/>
+        </DockPanel>
+    </Grid>
+</Window>

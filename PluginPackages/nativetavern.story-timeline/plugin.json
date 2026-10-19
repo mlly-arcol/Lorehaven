@@ -1,0 +1,16 @@
+{
+  "id": "nativetavern.story-timeline",
+  "name": "剧情事件时间线",
+  "version": "1.0.0",
+  "author": "Lorehaven",
+  "description": "按对话记录可编辑的关键事件，并按需调用已配置模型提取新事件。",
+  "minimumAppVersion": "2.3.0",
+  "permissions": [
+    "读取当前对话中的消息",
+    "在当前对话中保存事件",
+    "仅在用户主动提取时调用已配置的 AI 模型"
+  ],
+  "capabilities": [
+    "story-timeline-v1"
+  ]
+}

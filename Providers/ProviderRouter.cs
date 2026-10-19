@@ -10,7 +10,7 @@ public sealed class ProviderRouter(
     ClaudeProvider claudeProvider) : ILLMProvider
 {
     public string Id => "provider-router";
-    public string DisplayName => "NativeTavern Provider Router";
+    public string DisplayName => "Lorehaven Provider Router";
 
     public async Task<IReadOnlyList<ModelInfo>> GetModelsAsync(CancellationToken cancellationToken)
     {

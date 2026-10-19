@@ -7,8 +7,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationIcon>Assets\NativeTavern.ico</ApplicationIcon>
-    <Version>2.2.0</Version>
-    <AssemblyName>NativeTavern</AssemblyName>
+    <Version>2.3.0</Version>
+    <AssemblyName>Lorehaven</AssemblyName>
+    <Product>Lorehaven</Product>
+    <Title>Lorehaven</Title>
     <RootNamespace>NativeTavern</RootNamespace>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
@@ -28,6 +30,8 @@
   <ItemGroup>
     <Resource Include="Assets\NativeTavern.ico" />
     <Resource Include="Assets\NativeTavern.png" />
+    <Resource Include="Assets\Journal\*.png" />
+    <Resource Include="Assets\StarlitArchive\*.png" />
     <None Remove="Data\Sql\schema.sql" />
     <EmbeddedResource Include="Data\Sql\schema.sql"
                       LogicalName="NativeTavern.Data.Sql.schema.sql" />

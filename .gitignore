@@ -2,6 +2,7 @@ bin/
 obj/
 publish/
 /NativeTavern.exe
+/Lorehaven.exe
 UserData/
 .vs/
 *.user

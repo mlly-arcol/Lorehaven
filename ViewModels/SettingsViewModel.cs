@@ -23,6 +23,28 @@ public partial class SettingsViewModel(
         new(LocalizationService.English, "English")
     ];
     public IReadOnlyList<ThemeOption> Themes { get; private set; } = [];
+    public IReadOnlyList<ThemeStyleOption> ThemeStyles { get; private set; } = [];
+    public IReadOnlyList<ThinkingModeOption> ThinkingModes { get; private set; } = [];
+    public IReadOnlyList<SettingsSectionOption> SettingsSections { get; private set; } = CreateSettingsSections(localizationService);
+    private SettingsSectionOption? _selectedSettingsSection;
+    public SettingsSectionOption SelectedSettingsSection
+    {
+        get => _selectedSettingsSection ?? SettingsSections[0];
+        set
+        {
+            var section = SettingsSections.FirstOrDefault(x => x.Code == value?.Code) ?? SettingsSections[0];
+            if (ReferenceEquals(_selectedSettingsSection, section)) return;
+            _selectedSettingsSection = section;
+            OnPropertyChanged();
+        }
+    }
+    public bool IsLlamaCppProvider => SelectedProvider?.Id == "llamacpp";
+    public LocalModelService LocalModel => localModelService;
+    public string LocalModelStatus => localModelService.IsLoading
+        ? L($"正在加载：{localModelService.RunningModelName}", $"Loading: {localModelService.RunningModelName}")
+        : localModelService.IsRunning
+            ? L($"正在运行：{localModelService.RunningModelName}", $"Running: {localModelService.RunningModelName}")
+            : L("本应用未运行模型服务。", "No model service is running from this app.");
     public IReadOnlyList<ProviderProfile> ProviderProfiles { get; } = ProviderProfile.All;
     public ObservableCollection<ModelInfo> AvailableModels { get; } = [];
     public ObservableCollection<DetectedProvider> DetectedServices { get; } = [];
@@ -31,10 +53,13 @@ public partial class SettingsViewModel(
     [ObservableProperty] private ProviderProfile? _selectedProvider;
     [ObservableProperty] private LanguageOption? _selectedLanguage;
     [ObservableProperty] private ThemeOption? _selectedTheme;
+    [ObservableProperty] private ThemeStyleOption? _selectedThemeStyle;
+    [ObservableProperty] private ThinkingModeOption? _selectedThinkingMode;
     [ObservableProperty] private DetectedProvider? _selectedDetectedService;
     [ObservableProperty] private LocalModelFile? _selectedLocalModel;
     [ObservableProperty] private string _localModelDirectory = LocalModelService.DefaultModelDirectory;
     [ObservableProperty] private string _llamaCppPath = LocalModelService.DefaultLlamaCppPath;
+    [ObservableProperty] private int _localGpuLayers = 35;
     [ObservableProperty] private string _baseUrl = "https://api.openai.com/v1";
     [ObservableProperty] private string _apiKey = string.Empty;
     [ObservableProperty] private string _model = string.Empty;
@@ -52,11 +77,18 @@ public partial class SettingsViewModel(
     [ObservableProperty] private string _toggleWindowHotkey = "Ctrl+Alt+T";
     [ObservableProperty] private string _bossKeyHotkey = "Ctrl+Alt+B";
     [ObservableProperty] private string? _statusMessage;
-    [ObservableProperty] private bool _isBusy;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(StartSelectedLocalModelCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RefreshModelFilesCommand))]
+    private bool _isBusy;
     private bool _clearApiKey;
     private bool _initializing;
     private bool _rebuildingThemes;
     private bool _languageWatched;
+    private Task _appearanceSaveTask = Task.CompletedTask;
+    private CancellationTokenSource? _localStartCancellation;
+
+    internal Task AppearanceSaveCompletion => _appearanceSaveTask;
 
     public event Action? Saved;
 
@@ -102,7 +134,10 @@ public partial class SettingsViewModel(
         _initializing = true;
         var resolved = await settingsService.LoadResolvedAsync();
         WatchLanguageChanges();
+        RefreshSettingsSections(SelectedSettingsSection.Code);
         RefreshThemes(ThemeService.ToCode(ThemeService.ParseMode(resolved.Settings.ThemeMode)));
+        RefreshThemeStyles(ThemeService.NormalizeStyle(resolved.Settings.ThemeStyle));
+        RefreshThinkingModes(resolved.Settings.LocalModelThinkingEnabled);
         SelectedLanguage = Languages.First(x => x.Code == LocalizationService.Normalize(resolved.Settings.LanguageCode));
         SelectedProvider = ProviderProfiles.FirstOrDefault(x => x.Id == resolved.Settings.ProviderId) ?? ProviderProfiles[0];
         BaseUrl = resolved.Settings.BaseUrl;
@@ -119,6 +154,7 @@ public partial class SettingsViewModel(
             ? LocalModelService.DefaultModelDirectory : resolved.Settings.LocalModelDirectory;
         LlamaCppPath = string.IsNullOrWhiteSpace(resolved.Settings.LlamaCppPath)
             ? LocalModelService.DefaultLlamaCppPath : resolved.Settings.LlamaCppPath;
+        LocalGpuLayers = resolved.Settings.LocalGpuLayers;
         var defaultModelPath = Path.Combine(LocalModelDirectory, LocalModelService.DefaultModelFileName);
         var selectedModelPath = string.Equals(resolved.Settings.SelectedLocalModelPath,
             Path.Combine(LocalModelService.LegacyModelDirectory, LocalModelService.DefaultModelFileName),
@@ -141,6 +177,7 @@ public partial class SettingsViewModel(
     [RelayCommand]
     private async Task SaveAsync()
     {
+        await _appearanceSaveTask;
         if (!TryBuildSettings(out var settings)) return;
         IsBusy = true;
         try
@@ -225,7 +262,29 @@ public partial class SettingsViewModel(
         finally { IsBusy = false; }
     }
 
-    [RelayCommand]
+    private bool CanStartLocalModel() => !IsBusy;
+
+    [RelayCommand(CanExecute = nameof(CanStartLocalModel))]
+    private void RefreshModelFiles()
+    {
+        try
+        {
+            if (!Directory.Exists(LocalModelDirectory.Trim()))
+            {
+                StatusMessage = L("模型目录不存在，请重新选择。", "The model directory does not exist. Choose another folder.");
+                return;
+            }
+            RefreshLocalModelFiles(SelectedLocalModel?.FilePath);
+            StatusMessage = L($"发现 {LocalModels.Count} 个 GGUF 模型。", $"Found {LocalModels.Count} GGUF models.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            logger.LogWarning(ex, "Could not scan model directory.");
+            StatusMessage = L($"无法读取模型目录：{ex.Message}", $"Cannot read model directory: {ex.Message}");
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanStartLocalModel))]
     private async Task StartSelectedLocalModelAsync()
     {
         if (SelectedLocalModel is null)
@@ -234,12 +293,22 @@ public partial class SettingsViewModel(
             return;
         }
 
+        if (LocalGpuLayers is < 0 or > 999 || ContextLength is < 512 or > 262144)
+        {
+            StatusMessage = L("本地模型参数无效：显卡层数需为 0–999，上下文长度需为 512–262144。",
+                "Invalid local settings: GPU layers must be 0–999 and context length 512–262144.");
+            return;
+        }
         IsBusy = true;
         StatusMessage = L($"正在加载 {SelectedLocalModel.Name}…", $"Loading {SelectedLocalModel.Name}…");
+        using var cancellation = new CancellationTokenSource();
+        _localStartCancellation = cancellation;
+        var selectedModel = SelectedLocalModel;
         try
         {
             await localModelService.StartAsync(
-                LlamaCppPath.Trim(), SelectedLocalModel, ContextLength, CancellationToken.None);
+                LlamaCppPath.Trim(), selectedModel, ContextLength, LocalGpuLayers, cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
             var profile = ProviderProfiles.First(x => x.Id == "llamacpp");
             _initializing = true;
             SelectedProvider = profile;
@@ -247,15 +316,23 @@ public partial class SettingsViewModel(
             _initializing = false;
 
             var settings = BuildCurrentSettings();
-            var models = await provider.GetModelsAsync(settings, string.Empty, CancellationToken.None);
+            var models = await provider.GetModelsAsync(settings, string.Empty, cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
             AvailableModels.Clear();
             foreach (var availableModel in models) AvailableModels.Add(availableModel);
-            Model = models.FirstOrDefault()?.Id ?? Path.GetFileNameWithoutExtension(SelectedLocalModel.Name);
+            Model = models.FirstOrDefault()?.Id ?? Path.GetFileNameWithoutExtension(selectedModel.Name);
+            SelectedLocalModel = selectedModel;
 
+            await _appearanceSaveTask;
             settings = BuildCurrentSettings();
             await settingsService.SaveAsync(settings, apiKey: null);
-            StatusMessage = L($"已连接 {SelectedLocalModel.Name}。", $"Connected to {SelectedLocalModel.Name}.");
+            cancellation.Token.ThrowIfCancellationRequested();
+            StatusMessage = L($"已连接 {selectedModel.Name}。", $"Connected to {selectedModel.Name}.");
             Saved?.Invoke();
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = L("已取消模型加载。", "Model loading cancelled.");
         }
         catch (Exception ex)
         {
@@ -264,8 +341,25 @@ public partial class SettingsViewModel(
         }
         finally
         {
+            _localStartCancellation = null;
             _initializing = false;
             IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private void StopLocalModel()
+    {
+        try
+        {
+            _localStartCancellation?.Cancel();
+            localModelService.Stop();
+            StatusMessage = L("本应用启动的模型服务已停止，显存将释放。", "The model service started by this app has stopped; GPU memory will be released.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Stopping local model failed.");
+            StatusMessage = L($"停止模型失败：{ex.Message}", $"Failed to stop model: {ex.Message}");
         }
     }
 
@@ -312,6 +406,11 @@ public partial class SettingsViewModel(
             StatusMessage = L("生成参数超出有效范围。", "Generation parameters are outside the valid range.");
             return false;
         }
+        if (LocalGpuLayers is < 0 or > 999)
+        {
+            StatusMessage = L("显卡加载层数需为 0–999。", "GPU layers must be between 0 and 999.");
+            return false;
+        }
         if (settings.HotkeysEnabled &&
             (!GlobalHotkeyService.TryParse(settings.ToggleWindowHotkey, out _, out _) ||
              !GlobalHotkeyService.TryParse(settings.BossKeyHotkey, out _, out _)))
@@ -328,6 +427,7 @@ public partial class SettingsViewModel(
         {
             LanguageCode = SelectedLanguage?.Code ?? LocalizationService.Chinese,
             ThemeMode = SelectedTheme?.Code ?? ThemeService.ToCode(AppThemeMode.System),
+            ThemeStyle = SelectedThemeStyle?.Code ?? ThemeService.StyleCode,
             ProviderId = SelectedProvider?.Id ?? "openai-compatible",
             BaseUrl = BaseUrl.Trim(),
             Model = Model.Trim(),
@@ -336,9 +436,11 @@ public partial class SettingsViewModel(
             MaxTokens = MaxTokens,
             ContextLength = ContextLength,
             TrimHistoryToContext = TrimHistoryToContext,
+            LocalModelThinkingEnabled = SelectedThinkingMode?.Enabled,
             AutoScanLocalModels = AutoScanLocalModels,
             LocalModelDirectory = LocalModelDirectory.Trim(),
             LlamaCppPath = LlamaCppPath.Trim(),
+            LocalGpuLayers = LocalGpuLayers,
             SelectedLocalModelPath = SelectedLocalModel?.FilePath ?? string.Empty,
             IncludeCharacterContext = IncludeCharacterContext,
             IncludeKnowledgeContext = IncludeKnowledgeContext,
@@ -352,8 +454,9 @@ public partial class SettingsViewModel(
 
     private void RefreshLocalModelFiles(string? selectedPath)
     {
+        var models = localModelService.Scan(LocalModelDirectory.Trim());
         LocalModels.Clear();
-        foreach (var localModel in localModelService.Scan(LocalModelDirectory.Trim())) LocalModels.Add(localModel);
+        foreach (var localModel in models) LocalModels.Add(localModel);
         SelectedLocalModel = LocalModels.FirstOrDefault(x =>
             string.Equals(x.FilePath, selectedPath, StringComparison.OrdinalIgnoreCase)) ?? LocalModels.FirstOrDefault();
     }
@@ -387,7 +490,44 @@ public partial class SettingsViewModel(
     {
         if (_languageWatched) return;
         _languageWatched = true;
-        localizationService.LanguageChanged += () => RefreshThemes(SelectedTheme?.Code);
+        localModelService.PropertyChanged += (_, _) => OnPropertyChanged(nameof(LocalModelStatus));
+        localizationService.LanguageChanged += () =>
+        {
+            RefreshSettingsSections(SelectedSettingsSection.Code);
+            RefreshThemes(SelectedTheme?.Code);
+            RefreshThemeStyles(SelectedThemeStyle?.Code);
+            RefreshThinkingModes(SelectedThinkingMode?.Enabled);
+            OnPropertyChanged(nameof(LocalModelStatus));
+        };
+    }
+
+    private static IReadOnlyList<SettingsSectionOption> CreateSettingsSections(LocalizationService localization) =>
+    [
+        new("interface", localization.Text("界面与主题", "Interface & theme"), "\uE790"),
+        new("connection", localization.Text("模型连接", "Model connection"), "\uE774"),
+        new("generation", localization.Text("生成参数", "Generation"), "\uE9E9"),
+        new("privacy", localization.Text("上下文隐私", "Context privacy"), "\uE72E"),
+        new("local-models", localization.Text("本地模型", "Local models"), "\uE950"),
+        new("backup", localization.Text("数据备份", "Data backup"), "\uE896")
+    ];
+
+    private void RefreshSettingsSections(string selectedCode)
+    {
+        SettingsSections = CreateSettingsSections(localizationService);
+        OnPropertyChanged(nameof(SettingsSections));
+        SelectedSettingsSection = SettingsSections.FirstOrDefault(x => x.Code == selectedCode) ?? SettingsSections[0];
+    }
+
+    private void RefreshThinkingModes(bool? enabled)
+    {
+        ThinkingModes = new List<ThinkingModeOption>
+        {
+            new(null, L("跟随模型", "Model default")),
+            new(false, L("快速回复", "Quick reply")),
+            new(true, L("深度思考", "Deep thinking"))
+        };
+        OnPropertyChanged(nameof(ThinkingModes));
+        SelectedThinkingMode = ThinkingModes.First(x => x.Enabled == enabled);
     }
 
     private void RefreshThemes(string? selectedCode)
@@ -401,27 +541,68 @@ public partial class SettingsViewModel(
                 new(ThemeService.ToCode(AppThemeMode.Light), L("浅色", "Light")),
                 new(ThemeService.ToCode(AppThemeMode.Dark), L("深色", "Dark")),
             };
+            OnPropertyChanged(nameof(Themes));
             SelectedTheme = Themes.FirstOrDefault(x => x.Code == selectedCode) ?? Themes[0];
         }
         finally
         {
             _rebuildingThemes = false;
         }
-        OnPropertyChanged(nameof(Themes));
     }
 
     partial void OnSelectedThemeChanged(ThemeOption? value)
     {
         if (_initializing || _rebuildingThemes || value is null) return;
-        ThemeService.Apply(value.Code);
-        _ = PersistThemeAsync(value.Code);
+        ApplyAppearance();
     }
 
-    private async Task PersistThemeAsync(string themeCode)
+    private void RefreshThemeStyles(string? selectedCode)
+    {
+        _rebuildingThemes = true;
+        try
+        {
+            ThemeStyles =
+            [
+                new("starlit", L("星灯秘阁", "Starlit Archive"),
+                    L("墨紫书页与烛金星光，收纳每一个故事。", "Ink violet and candlelit gold, a home for every story.")),
+                new("harbor", L("潮汐手札", "Harbor Journal"),
+                    L("保留熟悉的纸色与苔绿，像港湾中的手写札记。", "The familiar paper and moss green of a harbor journal."))
+            ];
+            OnPropertyChanged(nameof(ThemeStyles));
+            SelectedThemeStyle = ThemeStyles.First(x => x.Code == ThemeService.NormalizeStyle(selectedCode));
+        }
+        finally { _rebuildingThemes = false; }
+    }
+
+    partial void OnSelectedThemeStyleChanged(ThemeStyleOption? value)
+    {
+        if (_initializing || _rebuildingThemes || value is null) return;
+        ApplyAppearance();
+    }
+
+    private void ApplyAppearance()
+    {
+        var modeCode = SelectedTheme?.Code ?? ThemeService.ToCode(ThemeService.Mode);
+        var styleCode = SelectedThemeStyle?.Code ?? ThemeService.StyleCode;
+        try
+        {
+            ThemeService.Apply(modeCode, styleCode);
+            // Keep the last click last on disk, even when earlier writes have not completed yet.
+            _appearanceSaveTask = PersistAppearanceAsync(_appearanceSaveTask, modeCode, styleCode);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to apply appearance setting.");
+            StatusMessage = L("无法应用主题，请查看日志。", "Could not apply theme. Check the log.");
+        }
+    }
+
+    private async Task PersistAppearanceAsync(Task previousSave, string modeCode, string styleCode)
     {
         try
         {
-            await settingsService.SaveThemeModeAsync(themeCode);
+            await previousSave;
+            await settingsService.SaveThemeAsync(modeCode, styleCode);
         }
         catch (Exception ex)
         {
@@ -432,6 +613,7 @@ public partial class SettingsViewModel(
 
     partial void OnSelectedProviderChanged(ProviderProfile? value)
     {
+        OnPropertyChanged(nameof(IsLlamaCppProvider));
         if (_initializing || value is null || string.IsNullOrWhiteSpace(value.DefaultBaseUrl)) return;
         BaseUrl = value.DefaultBaseUrl;
         AvailableModels.Clear();

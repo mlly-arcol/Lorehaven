@@ -1,0 +1,997 @@
+using System.Reflection;
+using System.Xml.Linq;
+using System.Net.Http;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Data;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging.Abstractions;
+using NativeTavern.Data.Repositories;
+using NativeTavern.Controls;
+using NativeTavern.Helpers;
+using NativeTavern.Models;
+using NativeTavern.Providers;
+using NativeTavern.Security;
+using NativeTavern.Services;
+using NativeTavern.Tests;
+using NativeTavern.ViewModels;
+using NativeTavern.Views;
+
+namespace FeaturePreview;
+
+internal static class Program
+{
+    private static LocalizationService? localization;
+    private static int renderCount;
+    [STAThread]
+    public static int Main(string[] args)
+    {
+        var output = Path.GetFullPath(args.FirstOrDefault() ?? Path.Combine(Environment.CurrentDirectory, "artifacts", "FeaturePreview", "Images"));
+        Directory.CreateDirectory(output);
+        var sandbox = Path.Combine(output, "Sandbox-" + Guid.NewGuid().ToString("N"));
+        AppPaths.UseRoot(sandbox);
+        Console.WriteLine("Creating isolated preview data.");
+        // Do not call AppPaths.EnsureCreated(), which intentionally migrates legacy user data.
+        // This harness creates only its explicit, isolated database and plugin directory.
+        using var harness = new ChatViewModelHarness(sandbox);
+        var characters = CreateCharacters(harness);
+        SeedMemories(harness, characters);
+        var sessions = CreateSessions(harness);
+        Console.WriteLine("Creating static chat state.");
+        var vm = CreateViewModel(harness, characters, sessions);
+
+        // Load the real palette/templates without running the application's startup/welcome path.
+        RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+        var app = new PreviewApplication { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        var appSource = XDocument.Load(Path.Combine(Environment.CurrentDirectory, "App.xaml")).Root!;
+        XNamespace presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+        var resourceSource = new XElement(presentation + "ResourceDictionary",
+            appSource.Attributes().Where(attribute => attribute.IsNamespaceDeclaration).Select(attribute => new XAttribute(attribute)),
+            appSource.Element(presentation + "Application.Resources")!.Nodes());
+        var resourceXaml = System.Text.RegularExpressions.Regex.Replace(resourceSource.ToString(),
+            "clr-namespace:(NativeTavern(?:\\.[A-Za-z]+)*)(?=\")", "clr-namespace:$1;assembly=Lorehaven");
+        app.Resources = (ResourceDictionary)System.Windows.Markup.XamlReader.Parse(resourceXaml);
+        localization = new LocalizationService();
+        var languageArgument = Array.FindIndex(args, argument => argument.Equals("--language", StringComparison.OrdinalIgnoreCase));
+        var english = languageArgument >= 0 && languageArgument + 1 < args.Length &&
+            args[languageArgument + 1].StartsWith("en", StringComparison.OrdinalIgnoreCase);
+        localization.SetLanguage(english ? LocalizationService.English : LocalizationService.Chinese);
+        Console.WriteLine("Application resources loaded; rendering offscreen.");
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
+        Complete((Task)typeof(ChatViewModel).GetMethod("ReloadMemoriesAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(vm, new object[] { characters[0].Id })!);
+
+        var theme = args.Skip(1).Any(arg => arg.Equals("dark", StringComparison.OrdinalIgnoreCase))
+            ? AppThemeMode.Dark : AppThemeMode.Light;
+        var styleArgument = Array.FindIndex(args, argument => argument.Equals("--style", StringComparison.OrdinalIgnoreCase));
+        var style = ThemeService.NormalizeStyle(styleArgument >= 0 && styleArgument + 1 < args.Length
+            ? args[styleArgument + 1] : ThemeService.StarlitStyle);
+        ThemeService.Apply(theme, style);
+        if (args.Any(arg => arg.Equals("--branches-only", StringComparison.OrdinalIgnoreCase)))
+        {
+            ThemeService.Apply(theme);
+            RenderBranchPreviews(sessions, output, theme.ToString().ToLowerInvariant());
+            AssertNoNetwork(harness);
+            Console.WriteLine($"Rendered {renderCount} {theme} branch previews. Expand/collapse/selection template checks passed. Model calls: {harness.Provider.Started}. HTTP calls: {PreviewNetworkGuard.Attempts}.");
+            return 0;
+        }
+        if (args.Any(arg => arg.Equals("--welcome-only", StringComparison.OrdinalIgnoreCase)))
+        {
+            ThemeService.Apply(theme);
+            var label = theme.ToString().ToLowerInvariant();
+            RenderWelcomePreviews(output, label);
+            if (!args.Any(arg => arg.Equals("--render-only", StringComparison.OrdinalIgnoreCase)))
+                SmokeWelcomeModal();
+            AssertNoNetwork(harness);
+            var modalStatus = args.Any(arg => arg.Equals("--render-only", StringComparison.OrdinalIgnoreCase))
+                ? "Modal checks skipped." : "Enter/close modal checks passed.";
+            Console.WriteLine($"Rendered {renderCount} {theme} welcome previews to {output}. {modalStatus} Model calls: {harness.Provider.Started}. HTTP calls: {PreviewNetworkGuard.Attempts}.");
+            return 0;
+        }
+        using var services = CreatePreviewServices(harness);
+        var main = services.GetRequiredService<MainViewModel>();
+        PopulatePages(main, harness, characters, theme);
+        if (args.Any(arg => arg.Equals("--settings-only", StringComparison.OrdinalIgnoreCase)))
+        {
+            var label = style + "-" + theme.ToString().ToLowerInvariant() + (english ? "-en" : "-zh");
+            RenderSettingsPreviews(main, output, label);
+            AssertNoNetwork(harness);
+            Console.WriteLine($"Rendered {renderCount} {style}/{theme} settings previews. Navigation bindings, retained unsaved fields, section visibility, scroll reset, control height, and horizontal bounds verified. Model calls: {harness.Provider.Started}. HTTP calls: {PreviewNetworkGuard.Attempts}.");
+            return 0;
+        }
+        if (args.Any(arg => arg.Equals("--themes-only", StringComparison.OrdinalIgnoreCase)))
+        {
+            var label = style + "-" + theme.ToString().ToLowerInvariant();
+            main.CurrentViewModel = main.Chat;
+            RenderMainWindow(main, 1440, 860, Path.Combine(output, $"chat-{label}-1440.png"));
+            RenderMainWindow(main, 960, 640, Path.Combine(output, $"chat-{label}-960.png"));
+            main.CurrentViewModel = main.Settings;
+            RenderMainWindow(main, 1280, 820, Path.Combine(output, $"settings-{label}-1280.png"));
+            RenderMainWindow(main, 960, 640, Path.Combine(output, $"settings-{label}-960.png"));
+            RenderWindowContent(new WelcomeWindow(), 900, 620, Path.Combine(output, $"welcome-{label}.png"));
+            if (args.Any(arg => arg.Equals("--verify-switch", StringComparison.OrdinalIgnoreCase)))
+                VerifyAppearanceSwitch(main);
+            AssertNoNetwork(harness);
+            Console.WriteLine($"Rendered {renderCount} {style}/{theme} theme previews. Model calls: {harness.Provider.Started}. HTTP calls: {PreviewNetworkGuard.Attempts}.");
+            return 0;
+        }
+        if (args.Any(arg => arg.Equals("--journal-only", StringComparison.OrdinalIgnoreCase)))
+        {
+            ThemeService.Apply(theme);
+            var label = theme.ToString().ToLowerInvariant();
+            RenderJournalPreviews(main, output, label);
+            RenderWelcomePreviews(output, label);
+            AssertNoNetwork(harness);
+            Console.WriteLine($"Rendered {renderCount} {theme} journal previews to {output}. Search popup target checks passed. Model calls: {harness.Provider.Started}. HTTP calls: {PreviewNetworkGuard.Attempts}. Sandbox: {sandbox}");
+            return 0;
+        }
+        {
+            Console.WriteLine("Rendering " + theme + " theme.");
+            ThemeService.Apply(theme);
+            Console.WriteLine("Theme applied.");
+            var label = theme.ToString().ToLowerInvariant();
+
+            foreach (var width in new[] { 430, 510 })
+            {
+                var performance = new GroupPerformanceDialog(characters);
+                RenderWindowContent(performance, width, 590, Path.Combine(output, $"performance-{label}-{width}.png"));
+            }
+
+            RenderBranchPreviews(sessions, output, label);
+
+            foreach (var width in new[] { 560, 700 })
+            {
+                var constructor = typeof(CharacterMemoryDialog).GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic).Single();
+                var memory = (Window)constructor.Invoke(new object?[] { null, characters, harness.Memory, characters[0].Id, false });
+                var reload = typeof(CharacterMemoryDialog).GetMethod("ReloadAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                Complete((Task)reload.Invoke(memory, new object?[] { null })!);
+                var list = (ListBox)memory.FindName("MemoryList");
+                if (list.Items.Count > 0) list.SelectedIndex = 0;
+                RenderWindowContent(memory, width, 700, Path.Combine(output, $"memory-{label}-{width}.png"));
+            }
+
+            foreach (var width in new[] { 800, 1200 })
+            {
+                vm.IsGroupPerformanceActive = false;
+                vm.IsGroupPerformancePaused = false;
+                vm.GroupPerformanceStatus = string.Empty;
+                var chat = new ChatView { DataContext = vm };
+                Render(chat, width, 780, Path.Combine(output, $"chat-idle-{label}-{width}.png"));
+                vm.IsGroupPerformanceActive = true;
+                vm.IsGroupPerformancePaused = true;
+                vm.GroupPerformanceStatus = "已暂停 · 第 2/3 轮 · 已完成 4/9 次发言，可发送消息插话。";
+                Render(chat, width, 780, Path.Combine(output, $"chat-paused-{label}-{width}.png"));
+            }
+
+            vm.IsGroupPerformanceActive = false;
+            vm.IsGroupPerformancePaused = false;
+            vm.GroupPerformanceStatus = string.Empty;
+            RenderShellPages(main, output, label);
+        }
+
+        AssertNoNetwork(harness);
+        Console.WriteLine($"Rendered {renderCount} {theme} previews to {output}. Model calls: {harness.Provider.Started}. HTTP calls: {PreviewNetworkGuard.Attempts}. Sandbox: {sandbox}");
+        return 0;
+    }
+
+    private static void AssertNoNetwork(ChatViewModelHarness harness)
+    {
+        if (harness.Provider.Started != 0) throw new InvalidOperationException("Preview unexpectedly invoked the model provider.");
+        if (PreviewNetworkGuard.Attempts != 0) throw new InvalidOperationException("Preview unexpectedly attempted an HTTP request.");
+    }
+
+    private static void RenderBranchPreviews(IReadOnlyList<ChatSession> sessions, string output, string label)
+    {
+        foreach (var width in new[] { 480, 690 })
+        {
+            var dialog = new ConversationBranchesDialog(sessions, sessions[2].Id);
+            RenderWindowContent(dialog, width, 620, Path.Combine(output, $"branches-{label}-{width}.png"), () =>
+            {
+                var tree = (TreeView)dialog.FindName("BranchTree");
+                var root = (TreeViewItem)tree.ItemContainerGenerator.ContainerFromIndex(0);
+                var expander = (ToggleButton)root.Template.FindName("Expander", root);
+                var children = (ItemsPresenter)root.Template.FindName("ItemsHost", root);
+                var current = Descendants<TreeViewItem>(tree).Single(item => item.IsSelected);
+                if (root.Template.FindName("PART_Header", root) is not ContentPresenter)
+                    throw new InvalidOperationException("The branch item header presenter is missing.");
+                expander.SetCurrentValue(ToggleButton.IsCheckedProperty, false);
+                expander.GetBindingExpression(ToggleButton.IsCheckedProperty)?.UpdateSource();
+                tree.UpdateLayout();
+                if (root.IsExpanded || children.Visibility != Visibility.Collapsed)
+                    throw new InvalidOperationException("The branch expander did not collapse its children.");
+                expander.SetCurrentValue(ToggleButton.IsCheckedProperty, true);
+                expander.GetBindingExpression(ToggleButton.IsCheckedProperty)?.UpdateSource();
+                tree.UpdateLayout();
+                if (!root.IsExpanded || children.Visibility != Visibility.Visible)
+                    throw new InvalidOperationException("The branch expander did not restore its children.");
+                // WPF promotes selection to the ancestor while its selected descendant is collapsed.
+                current.SetCurrentValue(TreeViewItem.IsSelectedProperty, true);
+                tree.UpdateLayout();
+                root.SetCurrentValue(TreeViewItem.IsSelectedProperty, true);
+                tree.UpdateLayout();
+                if (!root.IsSelected || current.IsSelected || !ReferenceEquals(tree.SelectedItem, root.Header))
+                    throw new InvalidOperationException("Branch item selection did not update the tree.");
+                current.SetCurrentValue(TreeViewItem.IsSelectedProperty, true);
+                tree.UpdateLayout();
+                if (!current.IsSelected || root.IsSelected)
+                    throw new InvalidOperationException("The current branch selection was not restored.");
+                Console.WriteLine("Branch template expansion and selection bindings verified.");
+            });
+        }
+    }
+
+    private static void RenderWelcomePreviews(string output, string label)
+    {
+        foreach (var (width, height) in new[] { (1020, 700), (900, 620), (884, 580) })
+        {
+            var welcome = new WelcomeWindow();
+            var content = (FrameworkElement)welcome.Content;
+            content.SetValue(Control.FontSizeProperty, welcome.FontSize);
+            content.UseLayoutRounding = welcome.UseLayoutRounding;
+            TextOptions.SetTextFormattingMode(content, TextOptions.GetTextFormattingMode(welcome));
+            RenderWindowContent(welcome, width, height, Path.Combine(output, $"welcome-{label}-{width}x{height}.png"));
+        }
+    }
+
+    private static void SmokeWelcomeModal()
+    {
+        var entered = RunWelcomeModal(window =>
+        {
+            if (window.FindName("EnterWorkspaceButton") is not Button button || !button.IsEnabled || !button.IsVisible)
+                throw new InvalidOperationException("The workspace entry button is not available.");
+            button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        });
+        if (entered != true) throw new InvalidOperationException("Entering the workspace did not accept the welcome dialog.");
+        var closed = RunWelcomeModal(window => window.Close());
+        if (closed == true) throw new InvalidOperationException("Closing the welcome dialog unexpectedly entered the workspace.");
+        Console.WriteLine("Welcome modal smoke passed: enter accepts; close cancels.");
+    }
+
+    private static bool? RunWelcomeModal(Action<WelcomeWindow> action)
+    {
+        var window = new WelcomeWindow
+        {
+            WindowStartupLocation = WindowStartupLocation.Manual,
+            Left = -32000,
+            Top = -32000,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            Opacity = 0
+        };
+        Exception? failure = null;
+        var timeout = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+        timeout.Tick += (_, _) =>
+        {
+            timeout.Stop();
+            failure = new TimeoutException("The offscreen welcome modal did not close.");
+            window.Close();
+        };
+        window.Loaded += (_, _) => window.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+        {
+            try { action(window); }
+            catch (Exception exception)
+            {
+                failure = exception;
+                window.Close();
+            }
+        }));
+        timeout.Start();
+        var result = window.ShowDialog();
+        timeout.Stop();
+        if (failure is not null) throw new InvalidOperationException("Welcome modal interaction failed.", failure);
+        return result;
+    }
+
+    private static ServiceProvider CreatePreviewServices(ChatViewModelHarness harness)
+    {
+        var services = new ServiceCollection();
+        typeof(NativeTavern.App).GetMethod("ConfigureServices", BindingFlags.Static | BindingFlags.NonPublic)!
+            .Invoke(null, new object[] { services });
+        // Reuse production registrations, overriding every data/model entry point before resolution.
+        // Do not call App.Run, OnStartup, MainViewModel.InitializeAsync or Settings.InitializeAsync.
+        services.RemoveAll<NativeTavern.Data.DatabaseConnectionFactory>();
+        services.AddSingleton(harness.Factory);
+        services.RemoveAll<ISecretProtector>();
+        services.AddSingleton<ISecretProtector, NoopProtector>();
+        services.RemoveAll<ILLMProvider>();
+        services.AddSingleton<ILLMProvider>(harness.Provider);
+        services.RemoveAll<ChatViewModel>();
+        services.AddSingleton(harness.ViewModel);
+        services.RemoveAll<LocalizationService>();
+        services.AddSingleton(localization!);
+        services.RemoveAll<PluginService>();
+        services.AddSingleton(new PluginService(Path.Combine(harness.RootDirectory, "plugins"),
+            new HttpClient(new PreviewNetworkGuard()), NullLogger<PluginService>.Instance));
+        services.AddHttpClient<OpenAICompatibleProvider>().ConfigurePrimaryHttpMessageHandler(() => new PreviewNetworkGuard());
+        services.AddHttpClient<ClaudeProvider>().ConfigurePrimaryHttpMessageHandler(() => new PreviewNetworkGuard());
+        return services.BuildServiceProvider();
+    }
+
+    private static void PopulatePages(MainViewModel main, ChatViewModelHarness harness, IReadOnlyList<Character> characters, AppThemeMode theme)
+    {
+        foreach (var character in characters) main.Characters.Characters.Add(character);
+        var group = new CharacterGroupNode("灯塔之约", characters.Count) { IsExpanded = true };
+        foreach (var character in characters) group.Characters.Add(character);
+        main.Characters.CharacterGroups.Add(group);
+        main.Characters.SelectedCharacter = characters[0];
+
+        foreach (var (name, type, chunks, enabled) in new[]
+        {
+            ("雾港旅行手册.md", "text/markdown", 12, true),
+            ("灯塔修复日志.txt", "text/plain", 7, true),
+            ("旧航线与潮汐.pdf", "application/pdf", 24, false)
+        })
+            main.Knowledge.Documents.Add(new KnowledgeDocument
+            {
+                Id = main.Knowledge.Documents.Count + 1, Name = name, MimeType = type,
+                ManagedPath = Path.Combine(harness.RootDirectory, "Documents", name),
+                ChunkCount = chunks, IsEnabled = enabled, CreatedAt = DateTimeOffset.Parse("2026-10-16T14:30:00+08:00")
+            });
+        main.Knowledge.SelectedDocument = main.Knowledge.Documents[0];
+
+        var narrator = new Persona
+        {
+            Id = 1, Name = "港城旅行者",
+            Content = "我是初到雾港的旅行者，喜欢收集沿途的故事。\n\n说话自然温和，遇到未知的事情会先观察，再向同伴提问。与角色一起探索灯塔的秘密。"
+        };
+        main.PromptStudio.Personas.Add(narrator);
+        main.PromptStudio.Personas.Add(new Persona { Id = 2, Name = "故事记录者", Content = "记录每一段旅程中的细节与约定。" });
+        main.PromptStudio.SelectedPersona = narrator;
+        var lorebook = new Lorebook { Id = 1, Name = "雾港纪事", Description = "灯塔、港口与旧航线的背景设定。", IsEnabled = true };
+        main.PromptStudio.Lorebooks.Add(lorebook);
+        // Selecting the backing field avoids an asynchronous repository refresh during static rendering.
+        typeof(PromptStudioViewModel).GetField("_selectedLorebook", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(main.PromptStudio, lorebook);
+        main.PromptStudio.LorebookName = lorebook.Name;
+        main.PromptStudio.LorebookDescription = lorebook.Description;
+        var entry = new LoreEntry { Id = 1, LorebookId = 1, Name = "旧灯塔", Keywords = "灯塔,海岸,晨光", Content = "雾港的旧灯塔已经熄灭多年。每逢满月，潮汐会显露通往地下仓库的石阶。", Priority = 100 };
+        main.PromptStudio.LoreEntries.Add(entry);
+        main.PromptStudio.SelectedLoreEntry = entry;
+        var preset = new PromptPreset { Id = 1, Name = "细腻叙事", SystemPrompt = "以自然的对话推进故事，保持每位角色的独立性格。", MainPrompt = "描写眼前的环境、角色行动与对话，为下一步留下选择。", Temperature = 0.8, TopP = 1, MaxTokens = 1024 };
+        main.PromptStudio.Presets.Add(preset);
+        main.PromptStudio.SelectedPreset = preset;
+        var script = new RegexScript { Id = 1, Name = "整理重复空行", Pattern = "\\n{3,}", Replacement = "\n\n", Mode = RegexScriptMode.Regex, Target = RegexScriptTarget.AssistantOutput, IsEnabled = true };
+        main.PromptStudio.RegexScripts.Add(script);
+        main.PromptStudio.SelectedRegexScript = script;
+        main.PromptStudio.ScriptTest = "灯塔终于亮了。\n\n\n\n海面映出温暖的光。";
+
+        // All plugin listings below are fixture objects, never downloaded or installed.
+        foreach (var (id, name, description) in new[]
+        {
+            ("preview.character-status", "角色状态面板", "在对话中展示角色的情绪、关系和当前状态。"),
+            ("preview.story-notes", "旅程笔记", "整理故事线索与约定，让每段旅程都有迹可循。"),
+            ("preview.world-lore", "世界设定助手", "为不同场景组织角色背景与世界书资料。")
+        })
+            main.Plugins.MarketplacePlugins.Add(new MarketplacePlugin
+            {
+                Id = id, Name = name, Version = "1.0.0", Author = "预览示例", Description = description,
+                IsInstalled = main.Plugins.MarketplacePlugins.Count == 0
+            });
+        main.Plugins.HasMarketplacePlugins = true;
+        main.Plugins.InstalledPlugins.Add(new InstalledPlugin
+        {
+            Manifest = new PluginManifest { Id = "preview.character-status", Name = "角色状态面板", Version = "1.0.0", Author = "预览示例", Description = "在对话中展示角色的情绪、关系和当前状态。", Permissions = ["角色状态"] },
+            DirectoryPath = Path.Combine(harness.RootDirectory, "plugins", "preview.character-status"), IsEnabled = true
+        });
+        main.Plugins.HasInstalledPlugins = true;
+
+        // Populate settings directly; its initializer would scan local folders and API ports.
+        typeof(SettingsViewModel).GetField("_initializing", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(main.Settings, true);
+        main.Settings.SelectedLanguage = main.Settings.Languages.Single(language => language.Code == localization!.CurrentLanguage);
+        typeof(SettingsViewModel).GetMethod("RefreshThemes", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main.Settings, new object[] { ThemeService.ToCode(theme) });
+        typeof(SettingsViewModel).GetMethod("RefreshThemeStyles", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main.Settings, new object[] { ThemeService.StyleCode });
+        typeof(SettingsViewModel).GetMethod("RefreshThinkingModes", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main.Settings, new object?[] { null });
+        main.Settings.SelectedProvider = main.Settings.ProviderProfiles.First(profile => profile.Id == "openai-compatible");
+        main.Settings.BaseUrl = "http://127.0.0.1:8080/v1";
+        main.Settings.Model = "示例模型（未连接）";
+        main.Settings.AutoScanLocalModels = false;
+        main.Settings.LocalModelDirectory = Path.Combine(harness.RootDirectory, "LocalModels");
+        main.Settings.LlamaCppPath = Path.Combine(harness.RootDirectory, "llama.cpp", "llama-server.exe");
+        var localModel = new LocalModelFile("Qwen_Qwen3.5-9B-Q4_K_M.gguf",
+            Path.Combine(main.Settings.LocalModelDirectory, "Qwen_Qwen3.5-9B-Q4_K_M.gguf"), 6_120_328_397);
+        main.Settings.LocalModels.Add(localModel);
+        main.Settings.SelectedLocalModel = localModel;
+        var detected = new DetectedProvider(ProviderProfile.All.Single(profile => profile.Id == "llamacpp"),
+            [new ModelInfo("Qwen3.5-9B", "Qwen3.5 9B")]);
+        main.Settings.DetectedServices.Add(detected);
+        main.Settings.SelectedDetectedService = detected;
+        main.Settings.LocalGpuLayers = 35;
+        main.Settings.IncludeCharacterContext = true;
+        main.Settings.IncludeKnowledgeContext = false;
+        main.Settings.CharacterMemoryEnabled = true;
+        typeof(SettingsViewModel).GetField("_initializing", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(main.Settings, false);
+        main.PromptInspector.EstimatedTokens = 1280;
+        main.PromptInspector.ActivatedLore = "旧灯塔";
+        main.PromptInspector.HistoryBudget = "全部保留";
+        main.PromptInspector.PromptText = "[1] system\n以自然的对话推进故事，保持每位角色的独立性格。\n\n[2] system\n雾港的旧灯塔已经熄灭多年。\n\n[3] user\n天色已经暗了。你们觉得，我们应该留在港城，还是现在出发？";
+    }
+
+    private static void RenderShellPages(MainViewModel main, string output, string label)
+    {
+        var pages = new (string Label, object ViewModel)[]
+        {
+            ("chat", main.Chat), ("characters", main.Characters), ("knowledge", main.Knowledge),
+            ("promptstudio", main.PromptStudio), ("plugins", main.Plugins),
+            ("settings", main.Settings), ("inspector", main.PromptInspector)
+        };
+        foreach (var (width, height) in new[] { (1280, 820), (960, 640), (960, 600) })
+        {
+            var viewport = height == 600 ? "960x600" : width.ToString();
+            foreach (var page in pages)
+            {
+                main.CurrentViewModel = page.ViewModel;
+                RenderMainWindow(main, width, height, Path.Combine(output, $"shell-{page.Label}-{label}-{viewport}.png"));
+            }
+            main.CurrentViewModel = main.Plugins;
+            main.Plugins.IsMarketplaceSelected = false;
+            RenderMainWindow(main, width, height, Path.Combine(output, $"shell-plugins-installed-{label}-{viewport}.png"));
+            main.Plugins.IsMarketplaceSelected = true;
+
+            main.CurrentViewModel = main.PromptStudio;
+            foreach (var (index, name) in new[] { (1, "lorebooks"), (2, "presets"), (3, "scripts") })
+                RenderMainWindow(main, width, height, Path.Combine(output, $"shell-promptstudio-{name}-{label}-{viewport}.png"), index);
+        }
+        var messages = main.Chat.Messages.ToArray();
+        main.Chat.Messages.Clear();
+        main.Chat.IsGroupChat = false;
+        main.Chat.IsBranch = false;
+        main.Chat.GroupMembers.Clear();
+        main.Chat.MemoryCharacters.Clear();
+        main.Chat.HasMemoryTarget = false;
+        main.Chat.CurrentAssistantName = "Lorehaven";
+        typeof(ChatViewModel).GetField("_session", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(main.Chat, null);
+        typeof(ChatViewModel).GetField("_selectedSession", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(main.Chat, null);
+        typeof(ChatViewModel).GetMethod("RefreshJournalBranches", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main.Chat, null);
+        main.Chat.JournalDescription = string.Empty;
+        main.Chat.SessionTitle = "新的故事";
+        main.CurrentViewModel = main.Chat;
+        foreach (var (width, height) in new[] { (1280, 820), (960, 640), (960, 600) })
+        {
+            var viewport = height == 600 ? "960x600" : width.ToString();
+            RenderMainWindow(main, width, height, Path.Combine(output, $"shell-chat-empty-{label}-{viewport}.png"));
+        }
+        foreach (var message in messages) main.Chat.Messages.Add(message);
+    }
+
+    private static void RenderJournalPreviews(MainViewModel main, string output, string label)
+    {
+        main.CurrentViewModel = main.Chat;
+        SetPerformanceState(main.Chat, paused: false);
+        foreach (var (width, height) in new[] { (1487, 1058), (1440, 860), (1280, 820), (960, 640), (960, 600) })
+            RenderMainWindow(main, width, height, Path.Combine(output, $"shell-chat-{label}-{width}x{height}.png"));
+
+        RenderMainWindow(main, 960, 640, Path.Combine(output, $"shell-chat-notes-closed-{label}-960x640.png"),
+            configureChat: chat =>
+            {
+                SetJournalNotes(chat, visible: true);
+                SetJournalNotes(chat, visible: false);
+            });
+        RenderMainWindow(main, 960, 640, Path.Combine(output, $"shell-chat-notes-open-{label}-960x640.png"),
+            configureChat: chat => SetJournalNotes(chat, visible: true));
+
+        SetPerformanceState(main.Chat, paused: true);
+        RenderMainWindow(main, 1440, 860, Path.Combine(output, $"shell-chat-paused-{label}-1440x860.png"));
+        SetPerformanceState(main.Chat, paused: false);
+
+        foreach (var (width, height) in new[] { (1280, 820), (960, 640) })
+            RenderMainWindow(main, width, height, Path.Combine(output, $"shell-chat-tools-{label}-{width}x{height}.png"),
+                configureChat: chat =>
+                {
+                    VerifyConversationToolsToggle(chat);
+                    AssertSearchPopupTarget(chat);
+                });
+    }
+
+    private static void RenderSettingsPreviews(MainViewModel main, string output, string label)
+    {
+        main.CurrentViewModel = main.Settings;
+        var sections = new (string Code, string ElementName)[]
+        {
+            ("interface", "InterfaceSection"), ("connection", "ConnectionSection"),
+            ("generation", "GenerationSection"), ("privacy", "PrivacySection"),
+            ("local-models", "LocalModelsSection"), ("backup", "BackupSection")
+        };
+        if (!main.Settings.SettingsSections.Select(section => section.Code).SequenceEqual(sections.Select(section => section.Code)))
+            throw new InvalidOperationException("The settings navigation categories are missing or in an unexpected order.");
+
+        foreach (var (width, height) in new[] { (1428, 858), (960, 640) })
+        {
+            var window = new NativeTavern.MainWindow(main) { Opacity = 1 };
+            try
+            {
+                var root = (FrameworkElement)window.Content;
+                root.DataContext = main;
+                root.RenderTransform = Transform.Identity;
+                root.UseLayoutRounding = window.UseLayoutRounding;
+                root.SetValue(Control.FontFamilyProperty, window.FontFamily);
+                root.SetValue(Control.ForegroundProperty, window.Foreground);
+                TextOptions.SetTextFormattingMode(root, TextOptions.GetTextFormattingMode(window));
+                if (window.FindName("SidebarColumn") is ColumnDefinition sidebar)
+                    sidebar.Width = new GridLength(width < 1100 ? 220 : 240);
+                LayoutPreview(root, width, height);
+                var view = Descendants<SettingsView>(root).Single();
+                var navigation = (ListBox)view.FindName("SectionNavigation");
+                var scroll = (ScrollViewer)view.FindName("SettingsScroll");
+                var sectionElements = sections.ToDictionary(section => section.Code,
+                    section => (FrameworkElement)view.FindName(section.ElementName));
+                if (!ReferenceEquals(navigation.ItemsSource, main.Settings.SettingsSections))
+                    throw new InvalidOperationException("The navigation is not bound to the real settings category list.");
+
+                void SelectSection(string code)
+                {
+                    var target = main.Settings.SettingsSections.Single(section => section.Code == code);
+                    navigation.SetCurrentValue(Selector.SelectedItemProperty, target);
+                    navigation.GetBindingExpression(Selector.SelectedItemProperty)!.UpdateSource();
+                    PumpPreviewDispatcher();
+                    LayoutPreview(root, width, height);
+                    if (main.Settings.SelectedSettingsSection.Code != code)
+                        throw new InvalidOperationException("The category selection did not update the settings view model.");
+                    if (sectionElements.Count(pair => pair.Value.Visibility == Visibility.Visible) != 1 ||
+                        sectionElements[code].Visibility != Visibility.Visible)
+                        throw new InvalidOperationException("The settings page did not show exactly the selected category.");
+                    if (Math.Abs(scroll.VerticalOffset) > .5)
+                        throw new InvalidOperationException("Selecting a category did not reset its scroll position.");
+                }
+
+                SelectSection("connection");
+                var baseUrl = Descendants<TextBox>(sectionElements["connection"]).Single(textBox =>
+                    BindingOperations.GetBinding(textBox, TextBox.TextProperty)?.Path?.Path == nameof(SettingsViewModel.BaseUrl));
+                const string unsavedUrl = "http://127.0.0.1:8080/v1?preview=unsaved";
+                const string unsavedKey = "preview-only-unsaved-key";
+                baseUrl.SetCurrentValue(TextBox.TextProperty, unsavedUrl);
+                baseUrl.GetBindingExpression(TextBox.TextProperty)!.UpdateSource();
+                var password = (PasswordBox)view.FindName("ApiKeyBox");
+                password.Password = unsavedKey;
+                if (main.Settings.BaseUrl != unsavedUrl || main.Settings.ApiKey != unsavedKey)
+                    throw new InvalidOperationException("The settings form did not retain edits in the real view model.");
+
+                foreach (var section in sections)
+                {
+                    SelectSection(section.Code);
+                    Render(root, width, height,
+                        Path.Combine(output, $"settings-{section.Code}-{label}-{width}x{height}.png"));
+                    AssertSettingsControlBounds(view, scroll, sectionElements[section.Code], section.Code, width);
+                }
+
+                SelectSection("local-models");
+                typeof(SettingsViewModel).GetMethod("WatchLanguageChanges", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(main.Settings, null);
+                var originalLanguage = localization!.CurrentLanguage;
+                foreach (var language in new[]
+                         {
+                             originalLanguage == LocalizationService.Chinese ? LocalizationService.English : LocalizationService.Chinese,
+                             originalLanguage
+                         })
+                {
+                    localization.SetLanguage(language);
+                    PumpPreviewDispatcher();
+                    LayoutPreview(root, width, height);
+                    if (!ReferenceEquals(navigation.ItemsSource, main.Settings.SettingsSections) ||
+                        navigation.SelectedItem is not SettingsSectionOption selected || selected.Code != "local-models" ||
+                        main.Settings.SelectedSettingsSection.Code != "local-models")
+                        throw new InvalidOperationException("Refreshing category labels after a language change lost the selected navigation item.");
+                    if (sectionElements.Count(pair => pair.Value.Visibility == Visibility.Visible) != 1 ||
+                        sectionElements["local-models"].Visibility != Visibility.Visible)
+                        throw new InvalidOperationException("Changing interface language unexpectedly switched the active settings category.");
+                }
+
+                SelectSection("connection");
+                if (baseUrl.Text != unsavedUrl || password.Password != unsavedKey ||
+                    main.Settings.BaseUrl != unsavedUrl || main.Settings.ApiKey != unsavedKey)
+                    throw new InvalidOperationException("Changing settings categories discarded unsaved connection fields.");
+
+                SelectSection("local-models");
+                scroll.ScrollToEnd();
+                PumpPreviewDispatcher();
+                LayoutPreview(root, width, height);
+                if (scroll.ScrollableHeight > 1 && scroll.VerticalOffset < 1)
+                    throw new InvalidOperationException("The local model page could not scroll to its lower controls.");
+                SelectSection("interface");
+                Console.WriteLine($"Settings {width}x{height}: all six categories and retained unsaved connection fields verified; navigation height {navigation.ActualHeight:F0}px.");
+            }
+            finally { window.Close(); }
+        }
+    }
+
+    private static void AssertSettingsControlBounds(SettingsView view, ScrollViewer scroll, FrameworkElement section,
+        string code, int width)
+    {
+        var contentOrigin = scroll.TransformToAncestor(view).Transform(new Point());
+        var left = contentOrigin.X - 1;
+        var right = contentOrigin.X + scroll.ActualWidth + 1;
+        foreach (var control in Descendants<Control>(section).Where(control =>
+                     control is TextBox or PasswordBox or ComboBox or Button or CheckBox))
+        {
+            if (!IsPreviewVisible(control, section) || control.ActualWidth <= 0 || control.ActualHeight <= 0) continue;
+            var bounds = control.TransformToAncestor(view).TransformBounds(new Rect(control.RenderSize));
+            if (bounds.Left < left || bounds.Right > right)
+                throw new InvalidOperationException($"{code}/{width}: {control.GetType().Name} extends beyond the horizontal content viewport ({bounds.Left:F1}..{bounds.Right:F1}, expected {left:F1}..{right:F1}).");
+            var isSingleLine = control.TemplatedParent is null && (control is PasswordBox || control is TextBox textBox &&
+                !textBox.AcceptsReturn && textBox.TextWrapping == TextWrapping.NoWrap);
+            if (isSingleLine && control.ActualHeight is < 30 or > 46)
+                throw new InvalidOperationException($"{code}/{width}: a single-line {control.GetType().Name} has an unexpected height of {control.ActualHeight:F1}px.");
+        }
+    }
+
+    private static bool IsPreviewVisible(DependencyObject element, DependencyObject ancestor)
+    {
+        for (var current = element; current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            if (current is UIElement uiElement && uiElement.Visibility != Visibility.Visible) return false;
+            if (ReferenceEquals(current, ancestor)) return true;
+        }
+        return false;
+    }
+
+    private static void LayoutPreview(FrameworkElement element, double width, double height)
+    {
+        element.Measure(new Size(width, height));
+        element.Arrange(new Rect(0, 0, width, height));
+        element.UpdateLayout();
+    }
+
+    private static void PumpPreviewDispatcher()
+    {
+        var frame = new DispatcherFrame();
+        Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() => frame.Continue = false));
+        Dispatcher.PushFrame(frame);
+    }
+
+    private static void VerifyAppearanceSwitch(MainViewModel main)
+    {
+        var originalStyle = ThemeService.StyleCode;
+        var originalMode = ThemeService.Mode;
+        main.CurrentViewModel = main.Settings;
+        var window = new NativeTavern.MainWindow(main) { Opacity = 1 };
+        try
+        {
+            var root = (FrameworkElement)window.Content;
+            root.DataContext = main;
+            root.RenderTransform = Transform.Identity;
+            root.Measure(new Size(1280, 820));
+            root.Arrange(new Rect(0, 0, 1280, 820));
+            root.UpdateLayout();
+            var styleList = Descendants<ListBox>(root).Single(list => ReferenceEquals(list.ItemsSource, main.Settings.ThemeStyles));
+            var modeList = Descendants<ComboBox>(root).Single(list => ReferenceEquals(list.ItemsSource, main.Settings.Themes));
+            foreach (var style in new[] { "harbor", "starlit" })
+            {
+                styleList.SetCurrentValue(Selector.SelectedItemProperty, main.Settings.ThemeStyles.Single(option => option.Code == style));
+                styleList.GetBindingExpression(Selector.SelectedItemProperty)!.UpdateSource();
+                root.UpdateLayout();
+                if (ThemeService.StyleCode != style) throw new InvalidOperationException("Theme card did not apply its style.");
+                Complete((Task)typeof(SettingsViewModel).GetField("_appearanceSaveTask", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(main.Settings)!);
+            }
+            foreach (var mode in new[] { "dark", "light", "system" })
+            {
+                modeList.SetCurrentValue(Selector.SelectedItemProperty, main.Settings.Themes.Single(option => option.Code == mode));
+                modeList.GetBindingExpression(Selector.SelectedItemProperty)!.UpdateSource();
+                root.UpdateLayout();
+                if (ThemeService.ToCode(ThemeService.Mode) != mode || ThemeService.StyleCode != "starlit")
+                    throw new InvalidOperationException("Color mode lost the selected style.");
+                Complete((Task)typeof(SettingsViewModel).GetField("_appearanceSaveTask", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(main.Settings)!);
+            }
+            main.CurrentViewModel = main.Chat;
+            root.UpdateLayout();
+            var chat = Descendants<ChatView>(root).Single();
+            var header = (Image)chat.FindName("HeaderArtwork");
+            foreach (var style in new[] { "harbor", "starlit" })
+            foreach (var mode in new[] { AppThemeMode.Light, AppThemeMode.Dark })
+            {
+                ThemeService.Apply(mode, style);
+                root.UpdateLayout();
+                var artwork = ThemeService.GetArtwork(style, mode == AppThemeMode.Dark);
+                if (!ReferenceEquals(header.Source, Application.Current.Resources[artwork.HeaderResourceKey]) ||
+                    Math.Abs(header.Opacity - artwork.Opacities["ThemeHeaderOpacity"]) > .001)
+                    throw new InvalidOperationException("An existing conversation did not repaint its theme artwork.");
+            }
+            Console.WriteLine("Actual settings card and color-mode bindings, automatic save, and live conversation artwork switching verified.");
+        }
+        finally
+        {
+            window.Close();
+            ThemeService.Apply(originalMode, originalStyle);
+        }
+    }
+
+    private static void SetPerformanceState(ChatViewModel viewModel, bool paused)
+    {
+        viewModel.IsGroupPerformanceActive = paused;
+        viewModel.IsGroupPerformancePaused = paused;
+        viewModel.GroupPerformanceStatus = paused
+            ? "已暂停 · 第 2/3 轮 · 已完成 4/9 次发言，可发送消息插话。" : string.Empty;
+    }
+
+    private static void SetJournalNotes(ChatView chat, bool visible)
+    {
+        var panel = (FrameworkElement)chat.FindName("NotesPanel");
+        var currentlyVisible = panel.Visibility == Visibility.Visible;
+        if (currentlyVisible != visible)
+        {
+            var buttonName = visible ? "NotesToggleButton" : "NotesCloseButton";
+            var button = chat.FindName(buttonName) as Button
+                ?? throw new InvalidOperationException($"The journal {buttonName} button is missing.");
+            button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            chat.UpdateLayout();
+        }
+        if ((panel.Visibility == Visibility.Visible) != visible)
+            throw new InvalidOperationException("The journal notes toggle did not update the layout.");
+    }
+
+    private static void AssertSearchPopupTarget(ChatView chat)
+    {
+        var searchBox = (TextBox)chat.FindName("ConversationSearchBox");
+        if (searchBox.ActualWidth <= 1 || searchBox.Visibility != Visibility.Visible)
+            throw new InvalidOperationException("The expanded conversation search box has no usable width.");
+        var tools = (Expander)chat.FindName("ConversationTools");
+        var popup = Descendants<Popup>(tools).FirstOrDefault(candidate =>
+            BindingOperations.GetBinding(candidate, Popup.IsOpenProperty)?.Path?.Path == "IsSearchOpen");
+        if (popup is null || !ReferenceEquals(popup.PlacementTarget, searchBox))
+            throw new InvalidOperationException("The message search popup does not target the real search box.");
+        if (popup.IsOpen || ((ChatViewModel)chat.DataContext).IsSearchOpen)
+            throw new InvalidOperationException("A native search popup was unexpectedly opened during static rendering.");
+        Console.WriteLine("Search popup placement target verified without opening a native popup.");
+    }
+
+    private static void VerifyConversationToolsToggle(ChatView chat)
+    {
+        var tools = (Expander)chat.FindName("ConversationTools");
+        var button = Descendants<Button>(chat).Single(candidate => candidate.Content is string content && content == "\uE721");
+        if (tools.IsExpanded) throw new InvalidOperationException("Conversation tools unexpectedly start expanded.");
+        foreach (var expected in new[] { true, false, true })
+        {
+            button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            chat.UpdateLayout();
+            if (tools.IsExpanded != expected)
+                throw new InvalidOperationException("The search button did not toggle conversation tools.");
+        }
+        Console.WriteLine("Conversation search button open/close/reopen events verified.");
+    }
+
+    private static void RenderMainWindow(MainViewModel main, double width, double height, string path, int? studioTab = null, Action<ChatView>? configureChat = null)
+    {
+        var window = new NativeTavern.MainWindow(main) { Opacity = 1 };
+        var root = (FrameworkElement)window.Content;
+        root.DataContext = main;
+        root.RenderTransform = Transform.Identity;
+        root.UseLayoutRounding = window.UseLayoutRounding;
+        root.SetValue(Control.FontFamilyProperty, window.FontFamily);
+        root.SetValue(Control.ForegroundProperty, window.Foreground);
+        TextOptions.SetTextFormattingMode(root, TextOptions.GetTextFormattingMode(window));
+        if (window.FindName("SidebarColumn") is ColumnDefinition sidebar)
+            sidebar.Width = new GridLength(width < 1100 ? 220 : 240);
+        root.Measure(new Size(width, height));
+        root.Arrange(new Rect(0, 0, width, height));
+        root.UpdateLayout();
+        if (configureChat is not null)
+        {
+            var chat = Descendants<ChatView>(root).Single();
+            configureChat(chat);
+            root.UpdateLayout();
+        }
+        if (studioTab is int index)
+        {
+            var tabs = Descendants<TabControl>(root).First();
+            tabs.SelectedIndex = index;
+            root.UpdateLayout();
+        }
+        Render(root, width, height, path);
+        window.Close();
+    }
+
+    private static IEnumerable<T> Descendants<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is T found) yield return found;
+            foreach (var descendant in Descendants<T>(child)) yield return descendant;
+        }
+    }
+
+    private static List<Character> CreateCharacters(ChatViewModelHarness harness)
+    {
+        var repository = new CharacterRepository(harness.Factory);
+        var members = new List<Character>();
+        foreach (var (name, description) in new[]
+        {
+            ("林知夏", "记录沿途的线索，总会把重要的约定写进笔记。"),
+            ("陆行舟", "谨慎的领航员，熟悉夜间的海风与潮汐。"),
+            ("沈星遥 · 灯塔守望者", "守望灯塔的人，知道这座港城古老的秘密。")
+        })
+        {
+            var character = new Character
+            {
+                Name = name, Description = description, GroupName = "灯塔之约",
+                Tags = members.Count == 0 ? "旅行者 · 线索收集" : members.Count == 1 ? "领航员 · 沉稳可靠" : "守望者 · 港城往事",
+                Personality = "温和、细心，珍惜与同伴之间的约定。",
+                Scenario = "雾港的傍晚，三位旅伴在旧灯塔下商量接下来的旅程。",
+                FirstMessage = "海风有些凉了。要不要先坐下来，聊聊下一段旅程？",
+                Creator = "NativeTavern", IsFavorite = members.Count == 0,
+                CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
+            };
+            character.Id = repository.CreateAsync(character).GetAwaiter().GetResult();
+            members.Add(character);
+        }
+        return members;
+    }
+
+    private static void SeedMemories(ChatViewModelHarness harness, IReadOnlyList<Character> characters)
+    {
+        foreach (var content in new[]
+        {
+            "答应在下一个满月前与陆行舟一起修好港口的旧灯塔。",
+            "对花生过敏，聚餐时需要提前提醒同伴。",
+            "在雾港长大，习惯随身携带一本蓝色封面的旅行笔记。"
+        }) harness.Memory.AddManualAsync(characters[0].Id, content, true).GetAwaiter().GetResult();
+        var now = DateTimeOffset.UtcNow;
+        new CharacterMemoryRepository(harness.Factory).AddAsync(new CharacterMemory
+        {
+            CharacterId = characters[0].Id, Content = "今天的海风很强，决定明早再出海。", IsLocked = false,
+            CreatedAt = now, UpdatedAt = now
+        }).GetAwaiter().GetResult();
+    }
+
+    private static List<ChatSession> CreateSessions(ChatViewModelHarness harness)
+    {
+        var now = DateTimeOffset.Parse("2026-10-16T14:30:00+08:00");
+        var result = new List<ChatSession>();
+        foreach (var (title, parent, message) in new (string, int?, long?)[]
+        {
+            ("灯塔之约 · 故事起点", null, null),
+            ("沿海岸前行", 0, 12),
+            ("留在港城修复灯塔", 0, 12),
+            ("调查消失的航海日志", 1, 24),
+            ("在灯塔下等到黎明", 2, 31)
+        })
+        {
+            var parentSessionId = parent is int index ? result[index].Id : (long?)null;
+            var branchMessageId = parentSessionId is long parentId && message is not null
+                ? new ChatMessageRepository(harness.Factory).AddAsync(new ChatMessage
+                {
+                    ChatSessionId = parentId, Role = ChatRole.Assistant, Content = "预览分支起点。", CreatedAt = now
+                }).GetAwaiter().GetResult()
+                : (long?)null;
+            var session = new ChatSession
+            {
+                Title = title, IsGroupChat = true, ParentSessionId = parentSessionId,
+                BranchedFromMessageId = branchMessageId, CreatedAt = now.AddMinutes(result.Count * 5), UpdatedAt = now
+            };
+            session.Id = harness.Sessions.CreateAsync(session).GetAwaiter().GetResult();
+            result.Add(session);
+        }
+        return result;
+    }
+
+    private static ChatViewModel CreateViewModel(ChatViewModelHarness harness, IReadOnlyList<Character> characters, IReadOnlyList<ChatSession> sessions)
+    {
+        var vm = harness.ViewModel;
+        // Static preview state: never InitializeAsync() or a generation command.
+        typeof(ChatViewModel).GetField("_session", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(vm, sessions[2]);
+        foreach (var session in sessions) vm.Sessions.Add(session);
+        vm.SelectedSession = sessions[2];
+        vm.SessionTitle = sessions[2].Title;
+        foreach (var character in characters) vm.GroupMembers.Add(character);
+        foreach (var character in characters) vm.MemoryCharacters.Add(character);
+        // Set the fixture backing field; load memory explicitly after the dispatcher context exists.
+        typeof(ChatViewModel).GetField("_selectedMemoryCharacter", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(vm, characters[0]);
+        vm.HasMemoryTarget = true;
+        vm.IsGroupChat = true;
+        vm.IsBranch = true;
+        vm.HasProviderConfiguration = true;
+        vm.CurrentAssistantName = "灯塔之约";
+        vm.JournalDescription = "潮声拍打着旧码头，破损的灯塔在暮色中沉默。\n你们决定留在这座港城一段时间，寻找修复它的方法。";
+        typeof(ChatViewModel).GetMethod("RefreshJournalBranches", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(vm, null);
+        vm.EstimatedPromptTokens = 1280;
+        typeof(ChatViewModel).GetField("_performanceSessionId", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(vm, sessions[2].Id);
+        var plan = new GroupPerformancePlan(3, characters.Select(character => character.Id).ToArray());
+        for (var turn = 0; turn < 4; turn++) plan.Advance();
+        typeof(ChatViewModel).GetField("_performancePlan", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(vm, plan);
+        var dialogue = new[]
+        {
+            (ChatRole.User, "天色已经暗了。你们觉得，我们应该留在港城，还是现在出发？", (Character?)null),
+            (ChatRole.Assistant, "我想留下来。灯塔的灯已经很久没亮过了，今晚也许能找到修好它的办法。", characters[0]),
+            (ChatRole.Assistant, "潮水还没退。先留在这里吧，我会去检查仓库里有没有备用的零件。", characters[1]),
+            (ChatRole.Assistant, "那就说好了。等灯重新亮起来，我们再一起看海上的第一道晨光。", characters[2])
+        };
+        foreach (var (role, content, character) in dialogue)
+        {
+            vm.Messages.Add(new ChatMessageViewModel(new ChatMessage
+            {
+                Id = vm.Messages.Count + 1, ChatSessionId = sessions[2].Id, Role = role,
+                Content = content, SpeakerCharacterId = character?.Id, CreatedAt = DateTimeOffset.UtcNow
+            }, assistantName: character?.Name, characterId: character?.Id));
+        }
+        return vm;
+    }
+
+    private static void Complete(Task task)
+    {
+        if (!task.IsCompleted)
+        {
+            var frame = new DispatcherFrame();
+            var dispatcher = Dispatcher.CurrentDispatcher;
+            _ = task.ContinueWith(_ => dispatcher.InvokeAsync(() => frame.Continue = false), TaskScheduler.Default);
+            Dispatcher.PushFrame(frame);
+        }
+        task.GetAwaiter().GetResult();
+    }
+
+    private static void RenderWindowContent(Window window, double width, double height, string path, Action? prepare = null)
+    {
+        var content = (FrameworkElement)window.Content;
+        content.SetValue(Control.FontFamilyProperty, window.FontFamily);
+        content.SetValue(Control.ForegroundProperty, window.Foreground);
+        window.Content = null;
+        var host = new Grid { Background = (Brush)Application.Current.Resources["WindowBrush"] };
+        host.Children.Add(content);
+        window.Content = host;
+        if (prepare is not null)
+        {
+            host.Measure(new Size(width, height));
+            host.Arrange(new Rect(0, 0, width, height));
+            host.UpdateLayout();
+            prepare();
+        }
+        Render(host, width, height, path);
+        window.Content = null;
+        host.Children.Clear();
+        window.Close();
+    }
+
+    private static void Render(FrameworkElement element, double width, double height, string path)
+    {
+        Console.WriteLine("Layout " + Path.GetFileName(path));
+        element.Width = width;
+        element.Height = height;
+        element.Measure(new Size(width, height));
+        element.Arrange(new Rect(0, 0, width, height));
+        element.UpdateLayout();
+        typeof(LocalizationService).GetMethod("Apply", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(localization, new object[] { element });
+        RenderMarkdown(element);
+        element.UpdateLayout();
+        Console.WriteLine("Layout complete.");
+        var drawing = new DrawingVisual();
+        using (var context = drawing.RenderOpen())
+        {
+            context.DrawRectangle((Brush)Application.Current.Resources["WindowBrush"], null, new Rect(0, 0, width, height));
+        }
+        var bitmap = new RenderTargetBitmap((int)width, (int)height, 96, 96, PixelFormats.Pbgra32);
+        Console.WriteLine("Rasterizing.");
+        bitmap.Render(drawing);
+        bitmap.Render(element);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var stream = File.Create(path);
+        encoder.Save(stream);
+        renderCount++;
+    }
+
+    private static void RenderMarkdown(DependencyObject element)
+    {
+        if (element is MarkdownViewer viewer)
+            typeof(MarkdownViewer).GetMethod("RenderNow", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(viewer, null);
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(element); index++)
+            RenderMarkdown(VisualTreeHelper.GetChild(element, index));
+    }
+}
+
+// WPF queues startup as soon as Application is constructed. Pumping the dispatcher
+// for real bindings must never enter the production welcome/database startup path.
+internal sealed class PreviewApplication : Application
+{
+    protected override void OnStartup(StartupEventArgs e) { }
+}
+
+internal sealed class PreviewNetworkGuard : HttpMessageHandler
+{
+    public static int Attempts { get; private set; }
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        Attempts++;
+        throw new InvalidOperationException("HTTP is disabled in the isolated UI preview.");
+    }
+}

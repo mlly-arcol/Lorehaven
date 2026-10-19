@@ -24,7 +24,7 @@ public partial class MainWindow : Window
         DataContext = viewModel;
         PreviewKeyDown += OnPreviewKeyDown;
         ContentRendered += OnContentRendered;
-        SizeChanged += (_, _) => SidebarColumn.Width = new GridLength(ActualWidth < 1100 ? 192 : 220);
+        SizeChanged += (_, _) => SidebarColumn.Width = new GridLength(ActualWidth < 1100 ? 220 : 240);
     }
 
     private void OnContentRendered(object? sender, EventArgs e)
@@ -65,6 +65,27 @@ public partial class MainWindow : Window
         else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.OemComma)
         {
             viewModel.ShowSettingsCommand.Execute(null); e.Handled = true;
+        }
+    }
+
+    private void RecentStories_OnPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (RecentStories.IsEnabled && e.OriginalSource is DependencyObject target
+            && ItemsControl.ContainerFromElement(RecentStories, target) is ListBoxItem
+            && DataContext is MainViewModel viewModel)
+            viewModel.ShowChatCommand.Execute(null);
+    }
+
+    private void RecentStories_OnPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        // Navigate before selection can start a load and temporarily disable the list.
+        // Background collection refreshes never raise these input events or steal the current page.
+        if (RecentStories.IsEnabled && (e.Key is Key.Enter or Key.Space or Key.Up or Key.Down
+                or Key.Home or Key.End or Key.PageUp or Key.PageDown)
+            && DataContext is MainViewModel viewModel)
+        {
+            viewModel.ShowChatCommand.Execute(null);
+            if (e.Key == Key.Enter) e.Handled = true;
         }
     }
 

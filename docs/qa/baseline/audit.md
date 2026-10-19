@@ -1,4 +1,4 @@
-# NativeTavern Current UI Audit
+# Lorehaven Current UI Audit
 
 ## Overall verdict
 

@@ -1,4 +1,4 @@
-name: Release NativeTavern
+name: Release Lorehaven
 
 on:
   push:
@@ -23,8 +23,12 @@ jobs:
       - name: Restore
         shell: pwsh
         run: |
-          dotnet restore NativeTavern.csproj -r win-x64
           dotnet restore Tests\NativeTavern.Tests\NativeTavern.Tests.csproj
+          dotnet restore Lorehaven.csproj -r win-x64
+
+      - name: Verify plugin packages match source
+        shell: pwsh
+        run: ./.github/scripts/verify-plugin-packages.ps1
 
       - name: Test
         shell: pwsh
@@ -32,20 +36,35 @@ jobs:
 
       - name: Publish Windows x64
         shell: pwsh
-        run: dotnet publish NativeTavern.csproj -c Release -r win-x64 --self-contained true -o publish --no-restore
+        run: dotnet publish Lorehaven.csproj -c Release -r win-x64 --self-contained true -o publish --no-restore
 
       - name: Create checksum
         shell: pwsh
         run: |
-          $hash = (Get-FileHash -LiteralPath publish\NativeTavern.exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  NativeTavern.exe" | Set-Content -LiteralPath publish\SHA256SUMS.txt -Encoding ascii
+          $assets = @(
+            'publish\Lorehaven.exe'
+            'PluginPackages\nativetavern.dynamic-character-status.ntplugin'
+            'PluginPackages\nativetavern.story-prompts.ntplugin'
+            'PluginPackages\nativetavern.dice-random-tables.ntplugin'
+            'PluginPackages\nativetavern.story-timeline.ntplugin'
+          )
+          $checksums = foreach ($asset in $assets) {
+            $hash = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $([System.IO.Path]::GetFileName($asset))"
+          }
+          $checksums | Set-Content -LiteralPath publish\SHA256SUMS.txt -Encoding ascii
 
       - name: Create GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create $env:GITHUB_REF_NAME publish\NativeTavern.exe publish\SHA256SUMS.txt `
+          gh release create $env:GITHUB_REF_NAME `
+            publish\Lorehaven.exe publish\SHA256SUMS.txt `
+            PluginPackages\nativetavern.dynamic-character-status.ntplugin `
+            PluginPackages\nativetavern.story-prompts.ntplugin `
+            PluginPackages\nativetavern.dice-random-tables.ntplugin `
+            PluginPackages\nativetavern.story-timeline.ntplugin `
             --repo $env:GITHUB_REPOSITORY `
-            --title "NativeTavern $env:GITHUB_REF_NAME" `
+            --title "Lorehaven $env:GITHUB_REF_NAME" `
             --generate-notes

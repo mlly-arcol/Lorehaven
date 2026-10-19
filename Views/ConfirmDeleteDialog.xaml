@@ -11,11 +11,11 @@
         Background="Transparent"
         ShowInTaskbar="False"
         PreviewKeyDown="Dialog_OnPreviewKeyDown"
-        Loaded="Dialog_OnLoaded">
+        Loaded="Dialog_OnLoaded" Foreground="{DynamicResource TextBrush}">
     <Window.Resources>
         <Style x:Key="DialogDangerButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Background" Value="{StaticResource DangerSolidBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource DangerSolidBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource DangerSolidBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource DangerSolidBrush}"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="MinWidth" Value="104"/>
@@ -25,8 +25,8 @@
     </Window.Resources>
 
     <Grid Margin="18">
-        <Border Background="{StaticResource PanelBrush}"
-                BorderBrush="{StaticResource BorderBrush}"
+        <Border Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="1"
                 CornerRadius="16"
                 Padding="26,24,26,22">
@@ -42,14 +42,15 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <Border Width="42" Height="4" CornerRadius="2" Background="{StaticResource DangerSolidBrush}" HorizontalAlignment="Left"/>
+                <Border Width="42" Height="4" CornerRadius="2" Background="{DynamicResource DangerSolidBrush}" HorizontalAlignment="Left"/>
 
                 <TextBlock x:Name="DialogTitle"
                            Grid.Row="1"
                            Margin="0,17,0,0"
-                           FontSize="21"
+                           FontFamily="Georgia, Cambria, SimSun"
+                           FontSize="23"
                            FontWeight="SemiBold"
-                           Foreground="{StaticResource TextBrush}"/>
+                           Foreground="{DynamicResource TextBrush}"/>
 
                 <TextBlock x:Name="DialogMessage"
                            Grid.Row="2"
@@ -57,20 +58,20 @@
                            FontSize="14"
                            LineHeight="22"
                            TextWrapping="Wrap"
-                           Foreground="{StaticResource TextBrush}"/>
+                           Foreground="{DynamicResource TextBrush}"/>
 
                 <Border Grid.Row="3"
                         Margin="0,18,0,0"
                         Padding="13,11"
-                        Background="{StaticResource DangerSoftBgBrush}"
-                        BorderBrush="{StaticResource DangerSoftBorderBrush}"
+                        Background="{DynamicResource DangerSoftBgBrush}"
+                        BorderBrush="{DynamicResource DangerSoftBorderBrush}"
                         BorderThickness="1"
                         CornerRadius="9">
                     <TextBlock x:Name="DialogDetail"
                                FontSize="12"
                                LineHeight="19"
                                TextWrapping="Wrap"
-                               Foreground="{StaticResource DangerStrongTextBrush}"/>
+                               Foreground="{DynamicResource DangerStrongTextBrush}"/>
                 </Border>
 
                 <StackPanel Grid.Row="4"

@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <!-- Keep generated .cs files under the main project's existing Tests exclusion. -->
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)..\..\Tests\FeaturePreview\obj\</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)..\..\Tests\FeaturePreview\bin\</BaseOutputPath>
+  </PropertyGroup>
+</Project>

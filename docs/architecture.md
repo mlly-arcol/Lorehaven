@@ -1,8 +1,8 @@
-# NativeTavern 2.0 架构与维护边界
+# Lorehaven 2.0 架构与维护边界
 
 ## 产品边界
 
-NativeTavern 2.0 是面向个人使用的 Windows 原生、离线优先 AI 角色聊天工作区。核心功能在 2.0 冻结；后续版本优先处理缺陷、安全、兼容性、性能和小型体验改进。
+Lorehaven 2.0 是面向个人使用的 Windows 原生、离线优先 AI 角色聊天工作区。核心功能在 2.0 冻结；后续版本优先处理缺陷、安全、兼容性、性能和小型体验改进。
 
 以下能力不属于当前核心范围：
 
@@ -65,8 +65,8 @@ ChatViewModel.SendAsync
 发布前应满足：
 
 1. `dotnet test Tests\NativeTavern.Tests\NativeTavern.Tests.csproj -c Release`
-2. `dotnet build NativeTavern.csproj -c Release`
-3. `dotnet publish NativeTavern.csproj -c Release -r win-x64 --self-contained true -o publish`
+2. `dotnet build Lorehaven.csproj -c Release`
+3. `dotnet publish Lorehaven.csproj -c Release -r win-x64 --self-contained true -o publish`
 4. `git diff --check`
 
 推送 `v*` 标签后，GitHub Actions 会重新测试、发布单文件 Windows x64 程序并生成 SHA-256 校验文件。

@@ -51,6 +51,17 @@ public sealed class ChatSessionRepository(DatabaseConnectionFactory connectionFa
             ToParameters(session));
     }
 
+    /// <summary>Renames without overwriting metadata changed while a title was being prepared.</summary>
+    public async Task<bool> SetTitleAsync(long id, string title, DateTimeOffset updatedAt, string? expectedTitle = null)
+    {
+        await using var connection = connectionFactory.CreateConnection();
+        var changed = await connection.ExecuteAsync(
+            "UPDATE ChatSessions SET Title=@title,UpdatedAt=@updatedAt " +
+            "WHERE Id=@id AND (@expectedTitle IS NULL OR Title COLLATE BINARY=@expectedTitle)",
+            new { id, title, updatedAt = updatedAt.ToString("O"), expectedTitle });
+        return changed == 1;
+    }
+
     /// <summary>Only the flag moves, so pinning never rewrites the conversation's UpdatedAt stamp.</summary>
     public async Task SetPinnedAsync(long id, bool pinned)
     {

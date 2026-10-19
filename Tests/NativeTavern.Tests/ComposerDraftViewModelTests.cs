@@ -55,6 +55,47 @@ public class ComposerDraftViewModelTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task TypingAsNavigationStartsBelongsToTheIncomingConversation()
+    {
+        var vm = _harness.ViewModel;
+        vm.InputText = "留在乙对话的原草稿";
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var held = 0;
+        System.ComponentModel.PropertyChangedEventHandler holdNavigation = (_, change) =>
+        {
+            if (change.PropertyName != nameof(vm.IsSessionLoading) || !vm.IsSessionLoading ||
+                Interlocked.Exchange(ref held, 1) != 0) return;
+            started.TrySetResult();
+            resume.Task.WaitAsync(TimeSpan.FromSeconds(10)).GetAwaiter().GetResult();
+        };
+        vm.PropertyChanged += holdNavigation;
+        var select = Task.Run(() => vm.SelectedSession = _first);
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            vm.InputText = "加载甲对话期间写的新草稿";
+        }
+        finally
+        {
+            resume.TrySetResult();
+            await select;
+            vm.PropertyChanged -= holdNavigation;
+        }
+        Assert.True(await ChatViewModelHarness.WaitForAsync(
+            () => vm.CurrentSession?.Id == _first.Id && !vm.IsSessionLoading));
+        Assert.Equal("加载甲对话期间写的新草稿", vm.InputText);
+        Assert.True(await ChatViewModelHarness.WaitForAsync(async () =>
+            (await _harness.Drafts.GetAllAsync()).Any(x =>
+                x.ChatSessionId == _first.Id && x.Text == "加载甲对话期间写的新草稿")));
+
+        vm.SelectedSession = _second;
+        Assert.True(await ChatViewModelHarness.WaitForAsync(
+            () => vm.CurrentSession?.Id == _second.Id && !vm.IsSessionLoading));
+        Assert.Equal("留在乙对话的原草稿", vm.InputText);
+    }
+
+    [Fact]
     public async Task ARestartBringsBackEveryDraftOnItsOwnConversation()
     {
         _harness.ViewModel.InputText = "重启也要在";

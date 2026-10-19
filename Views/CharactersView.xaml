@@ -3,6 +3,7 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
  <UserControl.Resources>
   <Style x:Key="CharacterListItemStyle" TargetType="ListBoxItem">
+   <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
    <Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/>
    <Setter Property="Margin" Value="0,0,0,8"/><Setter Property="Background" Value="Transparent"/>
    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -12,93 +13,105 @@
    </ControlTemplate></Setter.Value></Setter>
   </Style>
   <DataTemplate x:Key="CharacterCardTemplate">
-   <Border x:Name="CharacterCard" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="11" Padding="10">
+   <Border x:Name="CharacterCard" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="10">
     <Grid>
      <Grid.ColumnDefinitions><ColumnDefinition Width="50"/><ColumnDefinition Width="*"/><ColumnDefinition Width="34"/></Grid.ColumnDefinitions>
      <Grid Width="44" Height="44" VerticalAlignment="Center">
-      <Ellipse Fill="{StaticResource CardBrush}"/>
+      <Ellipse Fill="{DynamicResource CardBrush}"/>
       <Ellipse><Ellipse.Fill><ImageBrush ImageSource="{Binding AvatarPath}" Stretch="UniformToFill"/></Ellipse.Fill></Ellipse>
       <TextBlock Text="{Binding Name, Converter={StaticResource InitialsConverter}}" FontWeight="SemiBold" FontSize="14"
-                 Foreground="{StaticResource MutedTextBrush}" HorizontalAlignment="Center" VerticalAlignment="Center">
+                 Foreground="{DynamicResource MutedTextBrush}" HorizontalAlignment="Center" VerticalAlignment="Center">
        <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/>
         <Style.Triggers><DataTrigger Binding="{Binding AvatarPath}" Value=""><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
        </Style></TextBlock.Style>
       </TextBlock>
      </Grid>
      <StackPanel Grid.Column="1" Margin="9,2,8,1" VerticalAlignment="Center">
-      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis"/>
-      <TextBlock Text="{Binding Tags}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,5,0,0"/>
+      <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis"/>
+      <TextBlock Text="{Binding Tags}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,5,0,0"/>
      </StackPanel>
      <Button Grid.Column="2" Content="★" Width="30" Height="30" Padding="0" Margin="0" Background="Transparent" BorderThickness="0"
              Command="{Binding DataContext.ToggleFavoriteCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}">
       <Button.Style><Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
        <Setter Property="Opacity" Value="0.28"/><Style.Triggers>
         <Trigger Property="IsMouseOver" Value="True"><Setter Property="Opacity" Value="0.7"/></Trigger>
-        <DataTrigger Binding="{Binding IsFavorite}" Value="True"><Setter Property="Opacity" Value="1"/><Setter Property="Foreground" Value="#D99A00"/></DataTrigger>
+        <DataTrigger Binding="{Binding IsFavorite}" Value="True"><Setter Property="Opacity" Value="1"/><Setter Property="Foreground" Value="{DynamicResource TealBrush}"/></DataTrigger>
        </Style.Triggers>
       </Style></Button.Style>
      </Button>
     </Grid>
    </Border>
    <DataTemplate.Triggers><DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
-    <Setter TargetName="CharacterCard" Property="Background" Value="{StaticResource AccentTintBgBrush}"/><Setter TargetName="CharacterCard" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+    <Setter TargetName="CharacterCard" Property="Background" Value="{DynamicResource AccentTintBgBrush}"/><Setter TargetName="CharacterCard" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
    </DataTrigger></DataTemplate.Triggers>
   </DataTemplate>
  </UserControl.Resources>
  <Grid Margin="30,26,30,22">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-  <DockPanel Margin="0,0,0,18">
-   <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+  <Grid Margin="0,0,0,20">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
     <Button Content="Import Card" Click="Import_OnClick"/>
     <Button Content="+ New Character" Command="{Binding NewCharacterCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
    </StackPanel>
-   <StackPanel><TextBlock Text="Characters" Style="{StaticResource PageTitleStyle}"/><TextBlock Text="Create, import and manage character cards" Foreground="{StaticResource MutedTextBrush}" Margin="0,5,0,0"/></StackPanel>
-  </DockPanel>
+   <Border BorderBrush="{DynamicResource TealBrush}" BorderThickness="2,0,0,0" Padding="15,0,0,0" Margin="0,0,18,0">
+   <StackPanel>
+    <TextBlock Text="CHARACTER LIBRARY" Style="{StaticResource PageKickerStyle}" Margin="0,0,0,5"/>
+    <StackPanel Orientation="Horizontal"><TextBlock Text="Characters" Style="{StaticResource PageTitleStyle}"/><Border Style="{StaticResource CountBadgeStyle}" VerticalAlignment="Center" Margin="12,0,0,0"><TextBlock Text="{Binding Characters.Count}" FontWeight="SemiBold" Foreground="{DynamicResource AccentTintTextBrush}"/></Border></StackPanel>
+    <TextBlock Text="Create, import and manage character cards" Style="{StaticResource PageSubtitleStyle}" Margin="0,5,0,0"/>
+   </StackPanel>
+   </Border>
+  </Grid>
   <Grid Grid.Row="1">
-   <Grid.ColumnDefinitions><ColumnDefinition Width="280"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+   <Grid.ColumnDefinitions><ColumnDefinition Width="260"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
    <Border Grid.Column="0" Style="{StaticResource SurfaceBorderStyle}" Padding="14">
     <Grid>
-     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-     <Grid>
+     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+     <DockPanel Margin="3,1,3,14">
+      <TextBlock Text="Your cast" Style="{StaticResource SectionTitleStyle}"/>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"><TextBlock Text="{Binding CharacterGroups.Count}" Foreground="{DynamicResource SubtleTextBrush}" FontSize="11"/><TextBlock Text="Groups" Foreground="{DynamicResource SubtleTextBrush}" FontSize="11" Margin="5,0,0,0"/></StackPanel>
+     </DockPanel>
+     <Grid Grid.Row="1">
       <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search name, tags or description"/>
-      <TextBlock Text="Search characters" Foreground="{StaticResource SubtleTextBrush}" Margin="12,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False">
+      <TextBlock Text="Search characters" Foreground="{DynamicResource SubtleTextBrush}" Margin="12,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False">
        <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/>
         <Style.Triggers><DataTrigger Binding="{Binding SearchText}" Value=""><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
        </Style></TextBlock.Style>
       </TextBlock>
      </Grid>
-     <DockPanel Grid.Row="1" Margin="3,12,0,11">
+     <DockPanel Grid.Row="2" Margin="3,12,0,11">
       <Button DockPanel.Dock="Right" Content="+ 创建分组" Click="CreateGroup_OnClick" Padding="11,6" Margin="8,0,0,0"/>
-      <CheckBox Content="Favorites only" IsChecked="{Binding FavoritesOnly}" Foreground="{StaticResource TextBrush}" VerticalAlignment="Center"/>
+      <CheckBox Content="Favorites only" IsChecked="{Binding FavoritesOnly}" Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
      </DockPanel>
-     <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+     <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
       <StackPanel>
        <ItemsControl ItemsSource="{Binding CharacterGroups}">
         <ItemsControl.ItemTemplate><DataTemplate>
          <StackPanel Margin="0,0,0,8">
-          <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="11" Padding="5">
+          <Border Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="11" Padding="5">
            <Grid>
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/><ColumnDefinition Width="34"/><ColumnDefinition Width="34"/></Grid.ColumnDefinitions>
-            <Button Grid.Column="0" Command="{Binding DataContext.ToggleGroupCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <Button Grid.Column="0" Grid.ColumnSpan="4" Command="{Binding DataContext.ToggleGroupCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     CommandParameter="{Binding}" Background="Transparent" BorderThickness="0" Padding="5,6" Margin="0" HorizontalContentAlignment="Stretch">
              <Grid>
               <Grid.ColumnDefinitions><ColumnDefinition Width="22"/><ColumnDefinition Width="29"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-              <TextBlock VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}">
+              <TextBlock VerticalAlignment="Center" Foreground="{DynamicResource MutedTextBrush}">
                <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Text" Value="▶"/>
                 <Style.Triggers><DataTrigger Binding="{Binding IsExpanded}" Value="True"><Setter Property="Text" Value="▼"/></DataTrigger></Style.Triggers>
                </Style></TextBlock.Style>
               </TextBlock>
-              <TextBlock Grid.Column="1" Text="📁" FontSize="18" VerticalAlignment="Center"/>
-              <TextBlock Grid.Column="2" Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-              <Border Grid.Column="3" Background="{StaticResource PanelBrush}" CornerRadius="9" Padding="7,2" Margin="8,0,2,0">
-               <TextBlock Text="{Binding CharacterCount}" FontSize="11" Foreground="{StaticResource MutedTextBrush}"/>
+              <TextBlock Grid.Column="1" Text="&#xE8B7;" FontFamily="Segoe Fluent Icons" Foreground="{DynamicResource AccentBrush}" FontSize="17" VerticalAlignment="Center"/>
+              <TextBlock Grid.Column="2" Text="{Binding Name}" Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+              <Border Grid.Column="3" Background="{DynamicResource PanelBrush}" CornerRadius="9" Padding="7,2" Margin="8,0,2,0">
+               <TextBlock Text="{Binding CharacterCount}" FontSize="11" Foreground="{DynamicResource MutedTextBrush}"/>
               </Border>
              </Grid>
             </Button>
-            <Button Grid.Column="1" Content="群聊" ToolTip="使用该分组创建群聊" Click="StartGroupChat_OnClick" Padding="3" Margin="1"/>
-            <Button Grid.Column="2" Content="✎" ToolTip="编辑分组" Click="EditGroup_OnClick" Padding="0" Margin="1"/>
-            <Button Grid.Column="3" Content="×" ToolTip="删除分组" Click="DeleteGroup_OnClick" Padding="0" Margin="1"
-                    Foreground="{StaticResource DangerTextBrush}"/>
+            <Button Grid.Row="1" Grid.Column="1" Content="群聊" ToolTip="使用该分组创建群聊" Click="StartGroupChat_OnClick" Padding="11,4" Margin="0,3,4,2"/>
+            <Button Grid.Row="1" Grid.Column="2" Content="✎" ToolTip="编辑分组" Click="EditGroup_OnClick" Width="30" Height="28" Padding="0" Margin="0,3,4,2"/>
+            <Button Grid.Row="1" Grid.Column="3" Content="×" ToolTip="删除分组" Click="DeleteGroup_OnClick" Width="30" Height="28" Padding="0" Margin="0,3,0,2"
+                    Foreground="{DynamicResource DangerTextBrush}"/>
            </Grid>
           </Border>
           <ListBox ItemsSource="{Binding Characters}"
@@ -117,30 +130,37 @@
                 ItemTemplate="{StaticResource CharacterCardTemplate}" ItemContainerStyle="{StaticResource CharacterListItemStyle}"
                 Background="Transparent" BorderThickness="0" ScrollViewer.VerticalScrollBarVisibility="Disabled"
                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+       <StackPanel Margin="10,25,10,0" HorizontalAlignment="Center">
+        <StackPanel.Style><Style TargetType="StackPanel"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Characters.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></StackPanel.Style>
+        <Border Width="54" Height="54" CornerRadius="16" Background="{DynamicResource AccentTintBgBrush}" HorizontalAlignment="Center" Margin="0,0,0,13"><TextBlock Text="&#xE77B;" FontFamily="Segoe Fluent Icons" FontSize="24" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+        <TextBlock Text="No characters to show" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+        <TextBlock Text="Create a character, import a card or adjust your filters." Style="{StaticResource PageSubtitleStyle}" TextAlignment="Center" Margin="0,7,0,0"/>
+       </StackPanel>
       </StackPanel>
      </ScrollViewer>
     </Grid>
    </Border>
-   <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" Background="{StaticResource BorderBrush}"/>
+   <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" Background="{DynamicResource BorderBrush}"/>
    <Border Grid.Column="2" Style="{StaticResource SurfaceBorderStyle}" Padding="0">
     <Grid>
      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-     <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="22,18">
+     <Border Background="{DynamicResource AccentTintBgBrush}" BorderBrush="{DynamicResource AccentTintBorderBrush}" BorderThickness="0,0,0,1" CornerRadius="10,10,0,0" Padding="22,20">
       <Grid>
        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-       <Grid Width="88" Height="88">
-        <Ellipse Fill="{StaticResource CardBrush}"/>
-        <Ellipse>
-         <Ellipse.Fill><ImageBrush ImageSource="{Binding AvatarPath}" Stretch="UniformToFill"/></Ellipse.Fill>
-        </Ellipse>
+       <Grid Width="76" Height="76" VerticalAlignment="Center">
+        <Ellipse Fill="{DynamicResource PanelBrush}" Stroke="{DynamicResource AccentTintBorderBrush}" StrokeThickness="2"/>
+        <TextBlock Text="{Binding Name, Converter={StaticResource InitialsConverter}}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        <Ellipse Margin="4"><Ellipse.Fill><ImageBrush ImageSource="{Binding AvatarPath}" Stretch="UniformToFill"/></Ellipse.Fill></Ellipse>
        </Grid>
-       <StackPanel Grid.Column="1" Margin="18,8,18,0">
-        <TextBlock Text="{Binding Name}" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-        <TextBlock Text="{Binding Creator}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="0,7,0,0" TextTrimming="CharacterEllipsis"/>
+       <StackPanel Grid.Column="1" Margin="16,0,14,0" VerticalAlignment="Center">
+        <TextBlock Text="Character card" FontSize="11" Foreground="{DynamicResource AccentTintTextBrush}" FontWeight="SemiBold" Margin="0,0,0,5"/>
+        <TextBlock Text="{Binding Name}" FontFamily="Georgia, Cambria, SimSun" FontSize="22" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+        <TextBlock Text="{Binding Creator}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,5,0,0" TextTrimming="CharacterEllipsis"/>
+        <TextBlock Text="{Binding Tags}" Foreground="{DynamicResource AccentTintTextBrush}" FontSize="11" Margin="0,5,0,0" TextTrimming="CharacterEllipsis" Visibility="{Binding Tags, Converter={StaticResource StringToVisibility}}"/>
        </StackPanel>
        <StackPanel Grid.Column="2" VerticalAlignment="Center">
         <Button Content="Choose Avatar" Click="ChooseAvatar_OnClick" Margin="0,0,0,11"/>
-        <CheckBox Content="Favorite" IsChecked="{Binding IsFavorite}" Foreground="{StaticResource TextBrush}" HorizontalAlignment="Center"/>
+        <CheckBox Content="Favorite" IsChecked="{Binding IsFavorite}" Foreground="{DynamicResource TextBrush}" HorizontalAlignment="Center"/>
        </StackPanel>
       </Grid>
      </Border>
@@ -151,31 +171,34 @@
        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
        <RowDefinition Height="Auto"/>
+       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
       </Grid.RowDefinitions>
-       <TextBlock Grid.Row="0" Text="Name *" VerticalAlignment="Center"/><TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12"/>
-       <TextBlock Grid.Row="1" Text="Creator" VerticalAlignment="Center"/><TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Creator, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12"/>
-       <TextBlock Grid.Row="2" Text="Tags" VerticalAlignment="Center"/><TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Tags, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12"/>
-       <TextBlock Grid.Row="3" Text="Group" VerticalAlignment="Center"/>
-       <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding GroupName}" IsReadOnly="True"
+       <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="Identity &amp; organization" Style="{StaticResource SectionTitleStyle}" Margin="0,0,0,16"/>
+       <TextBlock Grid.Row="1" Text="Name *" VerticalAlignment="Center"/><TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12"/>
+       <TextBlock Grid.Row="2" Text="Creator" VerticalAlignment="Center"/><TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Creator, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12"/>
+       <TextBlock Grid.Row="3" Text="Tags" VerticalAlignment="Center"/><TextBox Grid.Row="3" Grid.Column="1" Text="{Binding Tags, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12"/>
+       <TextBlock Grid.Row="4" Text="Group" VerticalAlignment="Center"/>
+       <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding GroupName}" IsReadOnly="True"
                 ToolTip="Use the group editor to change membership" Margin="0,0,0,12"/>
-       <TextBlock Grid.Row="4" Text="Aliases" VerticalAlignment="Center"/><TextBox Grid.Row="4" Grid.Column="1" Text="{Binding Aliases, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12" ToolTip="逗号分隔的别名，搜索角色和按角色筛选消息都会用到"/>
-       <TextBlock Grid.Row="5" Text="Description" VerticalAlignment="Top" Margin="0,10,0,0"/><TextBox Grid.Row="5" Grid.Column="1" Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="84" Margin="0,0,0,12"/>
-       <TextBlock Grid.Row="6" Text="Personality" VerticalAlignment="Top" Margin="0,10,0,0"/><TextBox Grid.Row="6" Grid.Column="1" Text="{Binding Personality, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="84" Margin="0,0,0,12"/>
-       <TextBlock Grid.Row="7" Text="Scenario" VerticalAlignment="Top" Margin="0,10,0,0"/><TextBox Grid.Row="7" Grid.Column="1" Text="{Binding Scenario, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="84" Margin="0,0,0,12"/>
-       <TextBlock Grid.Row="8" Text="First Message" VerticalAlignment="Top" Margin="0,10,0,0"/><TextBox Grid.Row="8" Grid.Column="1" Text="{Binding FirstMessage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="118" Margin="0,0,0,12"/>
-       <TextBlock Grid.Row="9" Text="Example Messages" VerticalAlignment="Top" Margin="0,10,0,0"/><TextBox Grid.Row="9" Grid.Column="1" Text="{Binding ExampleMessages, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="118"/>
+       <TextBlock Grid.Row="5" Text="Aliases" VerticalAlignment="Center"/><TextBox Grid.Row="5" Grid.Column="1" Text="{Binding Aliases, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12" ToolTip="逗号分隔的别名，搜索角色和按角色筛选消息都会用到"/>
+       <Border Grid.Row="6" Grid.ColumnSpan="2" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Margin="0,6,0,16" Padding="0,18,0,0"><TextBlock Text="Story &amp; personality" Style="{StaticResource SectionTitleStyle}"/></Border>
+       <TextBlock Grid.Row="7" Text="Description" VerticalAlignment="Top" Margin="0,10,0,0"/><TextBox Grid.Row="7" Grid.Column="1" Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="84" Margin="0,0,0,12"/>
+       <TextBlock Grid.Row="8" Text="Personality" VerticalAlignment="Top" Margin="0,10,0,0"/><TextBox Grid.Row="8" Grid.Column="1" Text="{Binding Personality, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="84" Margin="0,0,0,12"/>
+       <TextBlock Grid.Row="9" Text="Scenario" VerticalAlignment="Top" Margin="0,10,0,0"/><TextBox Grid.Row="9" Grid.Column="1" Text="{Binding Scenario, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="84" Margin="0,0,0,12"/>
+       <TextBlock Grid.Row="10" Text="First Message" VerticalAlignment="Top" Margin="0,10,0,0"/><TextBox Grid.Row="10" Grid.Column="1" Text="{Binding FirstMessage, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="118" Margin="0,0,0,12"/>
+       <TextBlock Grid.Row="11" Text="Example Messages" VerticalAlignment="Top" Margin="0,10,0,0"/><TextBox Grid.Row="11" Grid.Column="1" Text="{Binding ExampleMessages, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="118"/>
       </Grid>
      </ScrollViewer>
-     <Border Grid.Row="2" Background="{StaticResource NeutralBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="22,14">
-      <Grid>
-       <StackPanel Orientation="Horizontal">
+     <Border Grid.Row="2" Background="{DynamicResource NeutralBgBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="22,14">
+      <StackPanel>
+       <WrapPanel>
        <Button Content="Save" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
        <Button Content="Start Chat" Command="{Binding StartChatCommand}"/>
        <Button Content="Export Card" Click="Export_OnClick" ToolTip="Saves JSON, or embeds the card in a PNG avatar for sharing"/>
-       <Button Content="Delete" Click="Delete_OnClick" Background="{StaticResource DangerSoftBgBrush}" Foreground="{StaticResource DangerTextBrush}" BorderBrush="{StaticResource DangerSoftBorderBrush}"/>
-       </StackPanel>
-       <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="16,0,0,0"/>
-      </Grid>
+       <Button Content="Delete" Click="Delete_OnClick" Background="{DynamicResource DangerSoftBgBrush}" Foreground="{DynamicResource DangerTextBrush}" BorderBrush="{DynamicResource DangerSoftBorderBrush}"/>
+       </WrapPanel>
+       <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,10,0,0" Visibility="{Binding StatusMessage, Converter={StaticResource StringToVisibility}}"/>
+      </StackPanel>
      </Border>
     </Grid>
    </Border>

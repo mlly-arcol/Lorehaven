@@ -21,9 +21,14 @@ public sealed class ConversationSummaryService(ChatMessageRepository messages, C
     public async Task UpdateIfNeededAsync(ChatSession session)
     {
         if (session.SummaryIsManual) return;
-        var history = await messages.GetBySessionAsync(session.Id);
-        if (history.Count < MinimumMessages) return;
-        var coverable = history.Count - RecentMessages;
+        var total = await messages.CountBySessionAsync(session.Id);
+        if (total < MinimumMessages)
+        {
+            if (session.SummaryCoveredCount > 0 || session.Summary.StartsWith(Header, StringComparison.Ordinal))
+                await SaveAsync(session, [], 0);
+            return;
+        }
+        var coverable = total - RecentMessages;
         if (coverable < session.SummaryCoveredCount)
         {
             await RebuildAsync(session);
@@ -31,9 +36,14 @@ public sealed class ConversationSummaryService(ChatMessageRepository messages, C
         }
         if (coverable == session.SummaryCoveredCount) return;
 
-        var fresh = history.Skip(session.SummaryCoveredCount).Take(coverable - session.SummaryCoveredCount);
-        var lines = ReadLines(session).Concat(fresh.Select(ToLine)).ToList();
-        await SaveAsync(session, Compact(lines), coverable);
+        var count = coverable - session.SummaryCoveredCount;
+        var fresh = await messages.GetBySessionRangeAsync(session.Id, session.SummaryCoveredCount, count);
+        if (fresh.Count != count)
+        {
+            await RebuildAsync(session);
+            return;
+        }
+        await SaveAsync(session, Compact(ReadLines(session).Concat(fresh.Select(ToLine))), coverable);
     }
 
     /// <summary>Recomputes the recap from scratch, for example after a back-edited message.</summary>
@@ -41,8 +51,7 @@ public sealed class ConversationSummaryService(ChatMessageRepository messages, C
     {
         var history = await messages.GetBySessionAsync(session.Id);
         var coverable = Math.Max(0, history.Count - RecentMessages);
-        var lines = history.Take(coverable).Select(ToLine).ToList();
-        await SaveAsync(session, Compact(lines), coverable);
+        await SaveAsync(session, Compact(history.Take(coverable).Select(ToLine)), coverable);
     }
 
     /// <summary>Stores the writer's own recap and pauses the automatic digest until the next rebuild.</summary>
@@ -85,18 +94,21 @@ public sealed class ConversationSummaryService(ChatMessageRepository messages, C
         $"{message.Role}: {Trim(message.Content, LineContentLimit)}";
 
     /// <summary>Oldest lines are dropped first: the newest covered turns matter most.</summary>
-    private static List<string> Compact(IReadOnlyList<string> lines)
+    private static List<string> Compact(IEnumerable<string> lines)
     {
-        var kept = lines.Where(line => !string.IsNullOrWhiteSpace(line)).ToList();
-        while (kept.Count > MaxLines) kept.RemoveAt(0);
-        var characters = kept.Sum(line => line.Length + 1);
-        while (kept.Count > 1 && characters > MaxCharacters)
+        var kept = new Queue<string>();
+        var characters = 0;
+        foreach (var line in lines)
         {
-            characters -= kept[0].Length + 1;
-            kept.RemoveAt(0);
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            kept.Enqueue(line);
+            characters += line.Length + 1;
+            while (kept.Count > MaxLines || (kept.Count > 1 && characters > MaxCharacters))
+                characters -= kept.Dequeue().Length + 1;
         }
-        if (kept.Count == 1 && kept[0].Length > MaxCharacters) kept[0] = kept[0][..MaxCharacters];
-        return kept;
+        var result = kept.ToList();
+        if (result.Count == 1 && result[0].Length > MaxCharacters) result[0] = result[0][..MaxCharacters];
+        return result;
     }
 
     private static string Trim(string content, int max) => content.Length <= max ? content : content[..max] + "…";

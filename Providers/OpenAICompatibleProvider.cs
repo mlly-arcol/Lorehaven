@@ -155,10 +155,14 @@ public sealed class OpenAICompatibleProvider(
         if (string.IsNullOrWhiteSpace(settings.Model))
             throw new ProviderException("请填写模型名称。");
         var url = settings.BaseUrl.TrimEnd('/') + "/chat/completions";
+        var body = JsonSerializer.SerializeToNode(payload, JsonDefaults.Options)!;
+        var thinkingEnabled = payload.DisableLocalThinking ? false : settings.LocalModelThinkingEnabled;
+        if (settings.ProviderId == "llamacpp" && thinkingEnabled is bool enabled)
+            body["chat_template_kwargs"] = JsonSerializer.SerializeToNode(new { enable_thinking = enabled });
         var message = new HttpRequestMessage(HttpMethod.Post, url)
         {
             Content = new StringContent(
-                JsonSerializer.Serialize(payload, JsonDefaults.Options), Encoding.UTF8, "application/json")
+                body.ToJsonString(JsonDefaults.Options), Encoding.UTF8, "application/json")
         };
         AddHeaders(message, settings, apiKey);
         return message;
@@ -169,9 +173,9 @@ public sealed class OpenAICompatibleProvider(
         if (!string.IsNullOrWhiteSpace(apiKey))
             message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         if (settings.ProviderId == "gemini")
-            message.Headers.TryAddWithoutValidation("x-goog-api-client", "nativetavern/0.5.0");
+            message.Headers.TryAddWithoutValidation("x-goog-api-client", $"lorehaven/{AppVersion.Current.ToString(3)}");
         if (settings.ProviderId == "openrouter")
-            message.Headers.TryAddWithoutValidation("X-OpenRouter-Title", "NativeTavern");
+            message.Headers.TryAddWithoutValidation("X-OpenRouter-Title", "Lorehaven");
     }
 
     public static IReadOnlyList<ModelInfo> ParseModels(string jsonText)

@@ -1,5 +1,6 @@
 ﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Windows;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -23,9 +24,15 @@ public partial class ChatViewModel(
     PluginService pluginService,
     TrayService trayService,
     CharacterMemoryService memoryService,
-    ILogger<ChatViewModel> logger) : ObservableObject
+    ConversationTitleService titleService,
+    ILogger<ChatViewModel> logger,
+    PluginPromptResourceService? pluginPromptResources = null,
+    PluginResourceSelectionRepository? pluginResourceSelections = null,
+    DiceTableService? diceTableService = null,
+    PluginRandomResultRepository? randomResultRepository = null,
+    StoryTimelineService? storyTimelineService = null) : ObservableObject
 {
-    public ObservableCollection<ChatMessageViewModel> Messages { get; } = [];
+    public MessageCollection Messages { get; } = new();
     public ObservableCollection<ChatSession> Sessions { get; } = [];
     public ObservableCollection<string> SessionGroups { get; } = [];
     public ObservableCollection<Persona> Personas { get; } = [];
@@ -47,7 +54,7 @@ public partial class ChatViewModel(
     [ObservableProperty] private PromptPreset? _selectedPreset;
     [ObservableProperty] private string _authorNote = string.Empty;
     [ObservableProperty] private int _estimatedPromptTokens;
-    [ObservableProperty] private string _currentAssistantName = "NativeTavern";
+    [ObservableProperty] private string _currentAssistantName = "Lorehaven";
     [ObservableProperty] private string _currentAssistantAvatarPath = string.Empty;
     [ObservableProperty] private bool _isGroupChat;
     [ObservableProperty] private bool _isBranch;
@@ -64,6 +71,9 @@ public partial class ChatViewModel(
     private CancellationTokenSource? _generationCancellation;
     private TaskCompletionSource? _generationCompletion;
     private CancellationTokenSource? _suggestionCancellation;
+    private CancellationTokenSource? _titleCancellation;
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(GenerateConversationTitleCommand)), NotifyCanExecuteChangedFor(nameof(CancelConversationTitleCommand))]
+    private bool _isGeneratingTitle;
     private bool _suppressSessionSelection;
     private long _sessionLoadRequestId;
     private long _suggestionRequestId;
@@ -76,10 +86,12 @@ public partial class ChatViewModel(
 
     public async Task InitializeAsync()
     {
+        InitializeJournal();
         pluginService.PluginsChanged += OnPluginsChanged;
         if (!_draftHooksWired)
         {
             _draftHooksWired = true;
+            Messages.CollectionChanged += (_, _) => GenerateConversationTitleCommand.NotifyCanExecuteChanged();
             PendingImagePaths.CollectionChanged += (_, _) => ScheduleDraftFlush();
         }
         foreach (var draft in await draftRepository.GetAllAsync())
@@ -98,11 +110,13 @@ public partial class ChatViewModel(
 
     public async Task<CharacterStatusSnapshot?> GetCharacterStatusAsync(ChatMessageViewModel message)
     {
-        if (_session is null || !message.IsAssistant) return null;
+        if (_session is null || !IsCurrentMessage(message) || !message.IsAssistant) return null;
+        var session = _session;
         var characterId = message.CharacterId;
         if (characterId is not long id) return null;
-        return await characterStatusService.GetAsync(_session.Id, id)
-               ?? await characterStatusService.UpdateAsync(_session, id, message.Model.Id);
+        var snapshot = await characterStatusService.GetAsync(session.Id, id);
+        if (!IsCurrentMessage(message)) return null;
+        return snapshot ?? await characterStatusService.UpdateAsync(session, id, message.Model.Id);
     }
 
     public async Task RefreshConfigurationAsync() =>
@@ -134,23 +148,27 @@ public partial class ChatViewModel(
     [RelayCommand]
     private async Task ApplyPromptContextAsync()
     {
-        if (_session is null || IsGenerating) return;
+        if (_session is null || !CanModifyConversation) return;
+        var session = _session;
+        var groupName = SessionGroup;
         await chatService.UpdateSessionPromptAsync(
-            _session, SelectedPersona?.Id, SelectedLorebook?.Id, SelectedPreset?.Id, AuthorNote.Trim());
+            session, SelectedPersona?.Id, SelectedLorebook?.Id, SelectedPreset?.Id, AuthorNote.Trim());
         try
         {
-            await chatService.SetSessionGroupAsync(_session, SessionGroup);
-            SessionGroup = _session.GroupName;
+            await chatService.SetSessionGroupAsync(session, groupName);
+            if (_session?.Id != session.Id || SelectedSession?.Id != session.Id) return;
+            SessionGroup = session.GroupName;
             ErrorMessage = null;
         }
         catch (InvalidOperationException ex)
         {
-            SessionGroup = _session.GroupName;
+            if (_session?.Id != session.Id || SelectedSession?.Id != session.Id) return;
+            SessionGroup = session.GroupName;
             ErrorMessage = ex.Message;
         }
-        await RefreshSessionsAsync(_session.Id);
+        await RefreshSessionsAsync(session.Id, onlyForCurrentSessionId: session.Id);
         await RefreshSessionGroupsAsync();
-        await RefreshTokenEstimateAsync();
+        if (_session?.Id == session.Id) await RefreshTokenEstimateAsync();
     }
 
     [RelayCommand]
@@ -189,7 +207,8 @@ public partial class ChatViewModel(
 
     public async Task StartCharacterChatAsync(Character character)
     {
-        if (IsGenerating) return;
+        if (!CanModifyConversation) return;
+        using var navigation = BeginSessionNavigation();
         var session = await chatService.CreateSessionAsync(character);
         await RefreshSessionsAsync(session.Id);
         await LoadSessionAsync(session);
@@ -198,7 +217,8 @@ public partial class ChatViewModel(
 
     public async Task StartGroupChatAsync(string groupName)
     {
-        if (IsGenerating) return;
+        if (!CanModifyConversation) return;
+        using var navigation = BeginSessionNavigation();
         try
         {
             var session = await chatService.CreateGroupSessionAsync(groupName);
@@ -231,15 +251,72 @@ public partial class ChatViewModel(
     public async Task RenameCurrentConversationAsync(string title)
     {
         if (_session is null || IsGenerating) return;
+        _titleCancellation?.Cancel();
         await chatService.UpdateSessionTitleAsync(_session, title);
         SessionTitle = _session.Title;
         await RefreshSessionsAsync(_session.Id);
     }
 
+    private bool CanGenerateConversationTitle() => _session is not null && CanModifyConversation &&
+        !IsGeneratingTitle && HasProviderConfiguration && Messages.Any(x => !string.IsNullOrWhiteSpace(x.Content));
+
+    [RelayCommand(CanExecute = nameof(CanGenerateConversationTitle))]
+    private async Task GenerateConversationTitleAsync()
+    {
+        if (!CanGenerateConversationTitle()) return;
+        var session = _session!;
+        var originalTitle = session.Title;
+        using var cancellation = new CancellationTokenSource();
+        using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token);
+        requestCancellation.CancelAfter(TimeSpan.FromSeconds(45));
+        _titleCancellation = cancellation;
+        IsGeneratingTitle = true;
+        ErrorMessage = null;
+        var english = false;
+        try
+        {
+            english = (await settingsService.LoadAsync()).LanguageCode == LocalizationService.English;
+            requestCancellation.Token.ThrowIfCancellationRequested();
+            var title = await titleService.GenerateAsync(session, requestCancellation.Token);
+            requestCancellation.Token.ThrowIfCancellationRequested();
+            if (_session?.Id != session.Id || SelectedSession?.Id != session.Id || IsGenerating) return;
+            if (title is null)
+            {
+                ErrorMessage = english ? "No valid title was generated. Please try again." : "未能生成有效标题，请重试。";
+                return;
+            }
+            if (!await chatService.TryUpdateSessionTitleAsync(session, originalTitle, title)) return;
+            if (_session?.Id == session.Id) SessionTitle = session.Title;
+            await RefreshSessionsAsync(_session?.Id ?? session.Id);
+        }
+        catch (OperationCanceledException)
+        {
+            if (_session?.Id == session.Id && !cancellation.IsCancellationRequested)
+                ErrorMessage = english ? "Title generation timed out. Please try again." : "生成标题超时，请重试。";
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Generating a conversation title failed.");
+            if (_session?.Id == session.Id) ErrorMessage = english
+                ? "Could not generate a title. Check the model connection and try again."
+                : "生成标题失败，请检查模型连接后重试。";
+        }
+        finally
+        {
+            if (ReferenceEquals(_titleCancellation, cancellation)) _titleCancellation = null;
+            IsGeneratingTitle = false;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanCancelConversationTitle))]
+    private void CancelConversationTitle() => _titleCancellation?.Cancel();
+    private bool CanCancelConversationTitle() => IsGeneratingTitle;
+
     [RelayCommand(CanExecute = nameof(CanBranchFromMessage))]
     private async Task BranchFromMessageAsync(ChatMessageViewModel? message)
     {
-        if (_session is null || message is null || IsGenerating) return;
+        if (_session is null || !IsCurrentMessage(message) || !CanModifyConversation) return;
+        using var navigation = BeginSessionNavigation();
         try
         {
             var branch = await chatService.BranchSessionAsync(_session, message.Model.Id);
@@ -255,12 +332,13 @@ public partial class ChatViewModel(
     }
 
     private bool CanBranchFromMessage(ChatMessageViewModel? message) =>
-        _session is not null && message is not null && !IsGenerating;
+        IsCurrentMessage(message) && CanModifyConversation;
 
     [RelayCommand(CanExecute = nameof(CanOpenParentConversation))]
     private async Task OpenParentConversationAsync()
     {
-        if (_session?.ParentSessionId is not long parentId || IsGenerating) return;
+        if (_session?.ParentSessionId is not long parentId || !CanModifyConversation) return;
+        using var navigation = BeginSessionNavigation();
         var parent = await chatService.GetSessionAsync(parentId);
         if (parent is null)
         {
@@ -272,11 +350,13 @@ public partial class ChatViewModel(
     }
 
     private bool CanOpenParentConversation() =>
-        _session?.ParentSessionId is not null && !IsGenerating;
+        _session?.ParentSessionId is not null && CanModifyConversation;
 
     public async Task UpdateGroupChatAsync(string title, IReadOnlyCollection<long> characterIds)
     {
-        if (_session is null || !_session.IsGroupChat || IsGenerating) return;
+        if (_session is null || !_session.IsGroupChat || !CanModifyConversation) return;
+        using var navigation = BeginSessionNavigation();
+        StopGroupPerformance();
         try
         {
             await chatService.UpdateGroupSessionAsync(_session, title, characterIds);
@@ -295,6 +375,9 @@ public partial class ChatViewModel(
     private async Task SendAsync()
     {
         if (_session is null || !CanSend()) return;
+        var sessionId = _session.Id;
+        // An interjection takes priority over the next performance turn.
+        if (IsGroupPerformanceActive) PauseGroupPerformance();
         ErrorMessage = null;
         ClearReplySuggestions();
         var input = InputText;
@@ -302,10 +385,10 @@ public partial class ChatViewModel(
         InputText = string.Empty;
         PendingImagePaths.Clear();
         CancelDraftFlush();
-        await FlushDraftAsync(_session.Id, DraftStore.Draft.Empty);
-        var sessionId = _session.Id;
+        await FlushDraftAsync(sessionId, DraftStore.Draft.Empty);
+        if (_isDeletingSession) return;
         // A reply is still being written, so hold the message until the conversation is free again.
-        if (IsGenerating)
+        if (IsGenerating || _session?.Id != sessionId || IsSessionLoading)
         {
             _queue.Enqueue(sessionId, new SendQueue.Item(input, images));
             RefreshQueuedSends();
@@ -316,7 +399,7 @@ public partial class ChatViewModel(
 
     private async Task SendNowAsync(long sessionId, string input, IReadOnlyList<string> images)
     {
-        if (_session is null || _session.Id != sessionId) return;
+        if (_session is null || _session.Id != sessionId || _isDeletingSession || IsSessionLoading) return;
         using var cancellation = BeginGeneration();
         ChatMessageViewModel? assistantViewModel = null;
         try
@@ -350,7 +433,7 @@ public partial class ChatViewModel(
             if (assistantViewModel is not null && !string.IsNullOrEmpty(assistantViewModel.Content))
             {
                 assistantViewModel.SetSwipeState(0, 1, assistantViewModel.Content);
-                trayService.Notify("NativeTavern", "助手回复已完成。");
+                trayService.Notify("Lorehaven", "助手回复已完成。");
                 await RefreshReplySuggestionsAsync(cancellation.Token);
                 await UpdateCharacterStatusAsync(assistantViewModel.Model, cancellation.Token);
             }
@@ -399,7 +482,7 @@ public partial class ChatViewModel(
     /// can stream before the following message is posted.
     private async Task DrainQueueAsync(long sessionId)
     {
-        if (_session?.Id != sessionId || IsGenerating || _isDeletingSession) return;
+        if (_session?.Id != sessionId || IsGenerating || _isDeletingSession || IsGroupPerformanceRunning || IsSessionLoading) return;
         if (_queue.Dequeue(sessionId) is not SendQueue.Item item) return;
         RefreshQueuedSends();
         await SendNowAsync(sessionId, item.Text, item.Images);
@@ -430,7 +513,11 @@ public partial class ChatViewModel(
     }
 
     [RelayCommand(CanExecute = nameof(CanStop))]
-    private void Stop() => _generationCancellation?.Cancel();
+    private void Stop()
+    {
+        StopGroupPerformance();
+        _generationCancellation?.Cancel();
+    }
 
     [RelayCommand(CanExecute = nameof(CanGenerateNextSpeaker))]
     private Task NextSpeakerAsync() => GenerateNextSpeakerAsync();
@@ -438,6 +525,15 @@ public partial class ChatViewModel(
     public async Task GenerateNextSpeakerAsync(Character? requestedSpeaker = null)
     {
         if (_session is null || !CanGenerateNextSpeaker()) return;
+        if (IsGroupPerformanceActive) PauseGroupPerformance();
+        await GenerateNextSpeakerCoreAsync(requestedSpeaker);
+        if (_session is not null) await DrainQueueAsync(_session.Id);
+    }
+
+    private async Task<bool> GenerateNextSpeakerCoreAsync(Character? requestedSpeaker, bool performance = false)
+    {
+        if (_session is null || IsGenerating || IsSessionLoading || _isDeletingSession) return false;
+        var session = _session;
         ErrorMessage = null;
         ClearReplySuggestions();
         using var cancellation = BeginGeneration();
@@ -445,7 +541,7 @@ public partial class ChatViewModel(
         try
         {
             await chatService.GenerateNextSpeakerAsync(
-                _session,
+                session,
                 requestedSpeaker?.Id,
                 async assistant =>
                 {
@@ -469,13 +565,18 @@ public partial class ChatViewModel(
             if (assistantViewModel is not null && !string.IsNullOrEmpty(assistantViewModel.Content))
             {
                 assistantViewModel.SetSwipeState(0, 1, assistantViewModel.Content);
-                await RefreshReplySuggestionsAsync(cancellation.Token);
+                if (!performance) await RefreshReplySuggestionsAsync(cancellation.Token);
                 await UpdateCharacterStatusAsync(assistantViewModel.Model, cancellation.Token);
             }
-            await RefreshSessionsAsync(_session.Id);
+            await RefreshSessionsAsync(session.Id);
             await RefreshTokenEstimateAsync();
+            if (cancellation.IsCancellationRequested) return false;
+            if (assistantViewModel is not null && !string.IsNullOrWhiteSpace(assistantViewModel.Content)) return true;
+            ErrorMessage = "模型未返回内容，演出已暂停。";
+            return false;
         }
         catch (ProviderException ex) { ErrorMessage = ex.Message; }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception ex)
         {
             logger.LogError(ex, "Group chat next speaker generation failed.");
@@ -488,11 +589,14 @@ public partial class ChatViewModel(
                 Messages.Remove(assistantViewModel);
             EndGeneration(cancellation);
         }
+        return false;
     }
 
     [RelayCommand(CanExecute = nameof(CanCreateChat))]
     private async Task NewChatAsync()
     {
+        if (!CanModifyConversation) return;
+        using var navigation = BeginSessionNavigation();
         // Reuse the current empty conversation, preserving any unsent draft.
         // Otherwise reuse an empty ordinary session from the saved conversation list.
         if (_session is { CharacterId: null, IsGroupChat: false, ParentSessionId: null }
@@ -509,8 +613,10 @@ public partial class ChatViewModel(
     {
         if (_session is null || _isDeletingSession) return;
         _isDeletingSession = true;
+        RefreshConversationCommands();
         try
         {
+            StopGroupPerformance();
             if (IsGenerating)
             {
                 var completion = _generationCompletion?.Task;
@@ -546,76 +652,17 @@ public partial class ChatViewModel(
                 await LoadSessionAsync(recovery);
             }
         }
-        finally { _isDeletingSession = false; }
-    }
-
-    [ObservableProperty] private string _searchQuery = string.Empty;
-    [ObservableProperty] private bool _isSearchOpen;
-    [ObservableProperty] private bool _hasSearchResults;
-    [ObservableProperty] private bool _isSearching;
-
-    public ObservableCollection<MessageSearchResult> SearchResults { get; } = [];
-
-    /// <summary>Raised after a search result's conversation is loaded so the view can scroll to the hit.</summary>
-    public event Action<long>? JumpToMessageRequested;
-
-    [RelayCommand]
-    private async Task SearchMessagesAsync()
-    {
-        var query = SearchQuery.Trim();
-        SearchResults.Clear();
-        HasSearchResults = false;
-        if (query.Length < 2)
-        {
-            IsSearchOpen = false;
-            return;
-        }
-
-        IsSearching = true;
-        IsSearchOpen = true;
-        try
-        {
-            foreach (var result in await chatService.SearchMessagesAsync(query, 30)) SearchResults.Add(result);
-            HasSearchResults = SearchResults.Count > 0;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Conversation search failed.");
-        }
         finally
         {
-            IsSearching = false;
+            _isDeletingSession = false;
+            RefreshConversationCommands();
         }
-    }
-
-    [RelayCommand]
-    private void ClearSearch()
-    {
-        SearchQuery = string.Empty;
-        SearchResults.Clear();
-        HasSearchResults = false;
-        IsSearchOpen = false;
-    }
-
-    [RelayCommand]
-    private async Task OpenSearchResultAsync(MessageSearchResult? result)
-    {
-        if (result is null) return;
-        var session = Sessions.FirstOrDefault(x => x.Id == result.ChatSessionId);
-        if (session is null) return;
-        if (!ReferenceEquals(session, SelectedSession)) SelectedSession = session;
-        // Selecting a session loads it asynchronously; wait for that to settle before scrolling.
-        for (var attempt = 0; attempt < 80 && !ReferenceEquals(_session, session); attempt++)
-            await Task.Delay(25);
-        ClearSearch();
-        if (Messages.FirstOrDefault(x => x.Model.Id == result.MessageId) is { } target) ClearSpeakerFilterIfNeeded(target);
-        JumpToMessageRequested?.Invoke(result.MessageId);
     }
 
     [RelayCommand]
     private void BeginEdit(ChatMessageViewModel? message)
     {
-        if (!IsGenerating) message?.BeginEdit();
+        if (CanModifyConversation && IsCurrentMessage(message)) message!.BeginEdit();
     }
 
     [RelayCommand]
@@ -624,7 +671,8 @@ public partial class ChatViewModel(
     [RelayCommand]
     private async Task SaveEditAsync(ChatMessageViewModel? message)
     {
-        if (message is null || IsGenerating) return;
+        if (!IsCurrentMessage(message) || !CanModifyConversation) return;
+        var session = _session!;
         if (string.IsNullOrWhiteSpace(message.EditText))
         {
             ErrorMessage = "消息内容不能为空。";
@@ -632,10 +680,13 @@ public partial class ChatViewModel(
         }
         message.FinishEdit();
         await chatService.UpdateMessageAsync(message.Model);
+        await RefreshAutomaticSummaryAfterMessageChangeAsync(session);
+        if (!IsCurrentMessage(message)) return;
         if (message.IsAssistant)
         {
             message.SetSwipeState(0, 1, message.Content);
             await RefreshReplySuggestionsAsync();
+            if (!IsCurrentMessage(message)) return;
             await UpdateCharacterStatusAsync(message.Model);
         }
         ErrorMessage = null;
@@ -643,8 +694,12 @@ public partial class ChatViewModel(
 
     public async Task DeleteMessageAsync(ChatMessageViewModel message)
     {
-        if (IsGenerating) return;
+        if (!CanModifyConversation || !IsCurrentMessage(message)) return;
+        var session = _session!;
+        ClearReplySuggestions();
         await chatService.DeleteMessageAsync(message.Model.Id);
+        await RefreshAutomaticSummaryAfterMessageChangeAsync(session);
+        if (!IsCurrentMessage(message)) return;
         Messages.Remove(message);
         RefreshPinnedMessages();
         ErrorMessage = null;
@@ -733,9 +788,10 @@ public partial class ChatViewModel(
     [RelayCommand]
     private async Task TogglePinAsync(ChatMessageViewModel? message)
     {
-        if (message is null || IsGenerating) return;
+        if (!IsCurrentMessage(message) || !CanModifyConversation) return;
         message.IsPinned = !message.IsPinned;
         await chatService.SetMessagePinnedAsync(message.Model, message.IsPinned);
+        if (!IsCurrentMessage(message)) return;
         RefreshPinnedMessages();
         ErrorMessage = null;
     }
@@ -822,28 +878,29 @@ public partial class ChatViewModel(
     [RelayCommand]
     private async Task SaveStorySummaryAsync()
     {
-        if (_session is null) return;
+        if (_session is null || !CanModifyConversation) return;
+        var session = _session;
         try
         {
-            await chatService.SaveStorySummaryAsync(_session, StorySummary);
-            RefreshStorySummaryState();
+            await chatService.SaveStorySummaryAsync(session, StorySummary);
+            if (!ApplyStorySummaryToCurrentSession(session)) return;
             StorySummaryStatus = HasStorySummary
                 ? "已保存，自动摘要暂停；点“重新生成”可恢复。"
                 : "已清空剧情回顾。";
         }
         catch (Exception ex) when (ex is InvalidOperationException)
         {
-            StorySummaryStatus = ex.Message;
+            if (_session?.Id == session.Id) StorySummaryStatus = ex.Message;
         }
     }
 
     [RelayCommand]
     private async Task RebuildStorySummaryAsync()
     {
-        if (_session is null || IsGenerating) return;
-        await chatService.RebuildStorySummaryAsync(_session);
-        StorySummary = _session.Summary;
-        RefreshStorySummaryState();
+        if (_session is null || !CanModifyConversation) return;
+        var session = _session;
+        await chatService.RebuildStorySummaryAsync(session);
+        if (!ApplyStorySummaryToCurrentSession(session)) return;
         StorySummaryStatus = HasStorySummary
             ? $"已根据最早的 {StorySummaryCoveredCount} 条消息重新整理。"
             : "消息还不够多，暂时没有可整理的早期剧情。";
@@ -852,10 +909,10 @@ public partial class ChatViewModel(
     [RelayCommand]
     private async Task ClearStorySummaryAsync()
     {
-        if (_session is null) return;
-        await chatService.ClearStorySummaryAsync(_session);
-        StorySummary = string.Empty;
-        RefreshStorySummaryState();
+        if (_session is null || !CanModifyConversation) return;
+        var session = _session;
+        await chatService.ClearStorySummaryAsync(session);
+        if (!ApplyStorySummaryToCurrentSession(session)) return;
         StorySummaryStatus = "已清空，后续回复会重新自动生成。";
     }
 
@@ -881,22 +938,23 @@ public partial class ChatViewModel(
     [ObservableProperty] private bool _hasMemories;
     [ObservableProperty] private string _memoryStatus = string.Empty;
     [ObservableProperty] private string _newMemoryText = string.Empty;
+    private long _memoryReadRequestId;
     public bool CanExtractMemory => !IsExtractingMemory;
     partial void OnIsExtractingMemoryChanged(bool value) => OnPropertyChanged(nameof(CanExtractMemory));
 
     [RelayCommand]
     private async Task OpenMemoryAsync()
     {
-        if (_session?.CharacterId is not long characterId) return;
+        if (SelectedMemoryCharacter?.Id is not long characterId) return;
+        IsMemoryOpen = true;
         await ReloadMemoriesAsync(characterId);
         MemoryStatus = string.Empty;
-        IsMemoryOpen = true;
     }
 
     [RelayCommand]
     private async Task AddMemoryAsync()
     {
-        if (_session?.CharacterId is not long characterId) return;
+        if (SelectedMemoryCharacter?.Id is not long characterId) return;
         try
         {
             await memoryService.AddManualAsync(characterId, NewMemoryText);
@@ -922,13 +980,15 @@ public partial class ChatViewModel(
     [RelayCommand]
     private async Task ExtractMemoryNowAsync()
     {
-        if (_session?.CharacterId is not long characterId || IsExtractingMemory) return;
+        if (_session is null || SelectedMemoryCharacter?.Id is not long characterId || IsExtractingMemory) return;
+        var session = _session;
         IsExtractingMemory = true;
         MemoryStatus = "正在从对话中提炼记忆…";
         try
         {
             var before = CharacterMemories.Count;
-            await memoryService.ExtractIfNeededAsync(_session, force: true);
+            await memoryService.ExtractIfNeededAsync(session, force: true);
+            if (_session?.Id != session.Id || SelectedMemoryCharacter?.Id != characterId) return;
             await ReloadMemoriesAsync(characterId);
             var added = CharacterMemories.Count - before;
             MemoryStatus = added > 0 ? $"新增 {added} 条记忆。" : "没有提炼出新的记忆。";
@@ -938,22 +998,25 @@ public partial class ChatViewModel(
 
     private async Task ReloadMemoriesAsync(long characterId)
     {
+        var requestId = Interlocked.Increment(ref _memoryReadRequestId);
+        var memories = await memoryService.GetAsync(characterId);
+        if (SelectedMemoryCharacter?.Id != characterId || requestId != Volatile.Read(ref _memoryReadRequestId)) return;
         CharacterMemories.Clear();
-        foreach (var memory in await memoryService.GetAsync(characterId)) CharacterMemories.Add(memory);
+        foreach (var memory in memories) CharacterMemories.Add(memory);
         HasMemories = CharacterMemories.Count > 0;
     }
 
     [RelayCommand]
     private async Task SwipeLeftAsync(ChatMessageViewModel? message)
     {
-        if (message is null || IsGenerating || !message.CanSwipeLeft) return;
+        if (!IsCurrentMessage(message) || !CanModifyConversation || !message!.CanSwipeLeft) return;
         await SelectSwipeAsync(message, message.Model.CurrentSwipeIndex - 1);
     }
 
     [RelayCommand]
     private async Task SwipeRightAsync(ChatMessageViewModel? message)
     {
-        if (message is null || IsGenerating || !message.IsAssistant) return;
+        if (!IsCurrentMessage(message) || !CanModifyConversation || !message!.IsAssistant) return;
         if (message.Model.CurrentSwipeIndex + 1 < message.SwipeCount)
             await SelectSwipeAsync(message, message.Model.CurrentSwipeIndex + 1);
         else
@@ -974,11 +1037,11 @@ public partial class ChatViewModel(
     private Task ContinueLastReplyAsync(ChatMessageViewModel? message) =>
         message is null ? Task.CompletedTask : ContinueReplyAsync(message);
 
-    private bool CanContinueLastReply() => !IsGenerating && HasProviderConfiguration && _session is not null;
+    private bool CanContinueLastReply() => CanModifyConversation && HasProviderConfiguration && _session is not null;
 
     private async Task ContinueReplyAsync(ChatMessageViewModel message)
     {
-        if (_session is null || IsGenerating || !message.IsAssistant) return;
+        if (_session is null || !IsCurrentMessage(message) || !CanModifyConversation || !message.IsAssistant) return;
         if (!ReferenceEquals(message, Messages.LastOrDefault()))
         {
             ErrorMessage = "只能续写最后一条助手回复。";
@@ -1095,24 +1158,29 @@ public partial class ChatViewModel(
 
     private async Task SelectSwipeAsync(ChatMessageViewModel message, int index)
     {
+        if (!IsCurrentMessage(message) || !CanModifyConversation) return;
+        var session = _session!;
         try
         {
             var result = await chatService.SelectSwipeAsync(message.Model, index);
+            await RefreshAutomaticSummaryAfterMessageChangeAsync(session);
+            if (!IsCurrentMessage(message)) return;
             message.SetSwipeState(result.Message.CurrentSwipeIndex, result.SwipeCount, result.Message.Content);
             await RefreshReplySuggestionsAsync();
+            if (!IsCurrentMessage(message)) return;
             await UpdateCharacterStatusAsync(message.Model);
             ErrorMessage = null;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Selecting message swipe failed.");
-            ErrorMessage = "切换候选回复失败。";
+            if (IsCurrentMessage(message)) ErrorMessage = "切换候选回复失败。";
         }
     }
 
     private async Task GenerateAlternativeCoreAsync(ChatMessageViewModel message)
     {
-        if (_session is null || IsGenerating || !message.IsAssistant) return;
+        if (_session is null || !IsCurrentMessage(message) || !CanModifyConversation || !message.IsAssistant) return;
         if (!ReferenceEquals(message, Messages.LastOrDefault()))
         {
             ErrorMessage = "只能为聊天末尾的助手消息生成新候选。";
@@ -1156,10 +1224,13 @@ public partial class ChatViewModel(
         }
     }
 
-    private async Task LoadSessionAsync(ChatSession session)
+    internal async Task LoadSessionCoreAsync(ChatSession session, bool requireSelectedSession = false)
     {
+        if (_session?.Id != session.Id) StopGroupPerformance();
+        _titleCancellation?.Cancel();
         var requestId = Interlocked.Increment(ref _sessionLoadRequestId);
-        var composerAtLoadStart = DraftStore.Capture(InputText, PendingImagePaths);
+        var composerAtLoadStart = _navigationComposer is not null && _navigationComposerSessionId == _session?.Id
+            ? _navigationComposer : DraftStore.Capture(InputText, PendingImagePaths);
         _drafts.OnLoadStarted(_session?.Id, composerAtLoadStart);
         if (_session?.Id is long outgoing && outgoing != session.Id)
         {
@@ -1171,7 +1242,7 @@ public partial class ChatViewModel(
             : [];
         var character = session.CharacterId is long characterId
             ? await chatService.GetCharacterAsync(characterId) : null;
-        var assistantName = character?.Name ?? "NativeTavern";
+        var assistantName = character?.Name ?? "Lorehaven";
         var assistantAvatarPath = character?.AvatarPath ?? string.Empty;
         var bundle = await chatService.GetSessionBundleAsync(session.Id);
         var messageViewModels = new List<ChatMessageViewModel>();
@@ -1187,10 +1258,12 @@ public partial class ChatViewModel(
                 message.SpeakerCharacterId ?? session.CharacterId));
         }
 
-        var estimatedTokens = await GetTokenEstimateAsync(session);
-        if (requestId != Volatile.Read(ref _sessionLoadRequestId)) return;
+        var estimatedTokens = await GetTokenEstimateAsync(session, bundle.Messages);
+        if (requestId != Volatile.Read(ref _sessionLoadRequestId) ||
+            (requireSelectedSession && SelectedSession?.Id != session.Id)) return;
 
         _session = session;
+        InvalidateSearch();
         ClearReplySuggestions();
         IsGroupChat = session.IsGroupChat;
         IsBranch = session.ParentSessionId is not null;
@@ -1199,6 +1272,8 @@ public partial class ChatViewModel(
         CurrentAssistantName = assistantName;
         CurrentAssistantAvatarPath = assistantAvatarPath;
         SessionTitle = session.Title;
+        JournalDescription = !string.IsNullOrWhiteSpace(session.AuthorNote) ? session.AuthorNote
+            : character?.Scenario ?? members.FirstOrDefault()?.Scenario ?? string.Empty;
         SetSelectedSession(session.Id);
         SelectedPersona = Personas.FirstOrDefault(x => x.Id == session.PersonaId);
         SelectedLorebook = Lorebooks.FirstOrDefault(x => x.Id == session.LorebookId);
@@ -1214,7 +1289,12 @@ public partial class ChatViewModel(
         MemoryStatus = string.Empty;
         CharacterMemories.Clear();
         HasMemories = false;
-        HasMemoryTarget = session is { IsGroupChat: false, CharacterId: not null };
+        MemoryCharacters.Clear();
+        if (session.IsGroupChat)
+            foreach (var member in members) MemoryCharacters.Add(member);
+        else if (character is not null) MemoryCharacters.Add(character);
+        SelectedMemoryCharacter = MemoryCharacters.FirstOrDefault();
+        HasMemoryTarget = MemoryCharacters.Count > 0;
         var draft = _drafts.OnLoadFinished(
             session.Id, composerAtLoadStart, DraftStore.Capture(InputText, PendingImagePaths));
         InputText = draft.Text;
@@ -1222,28 +1302,32 @@ public partial class ChatViewModel(
         // Attachments are files on disk, and a draft can outlive them.
         foreach (var image in draft.Images.Where(File.Exists)) PendingImagePaths.Add(image);
         RefreshStorySummaryState();
-        Messages.Clear();
-        foreach (var message in messageViewModels) Messages.Add(message);
+        Messages.ReplaceAll(messageViewModels);
         RefreshPinnedMessages();
         EstimatedPromptTokens = estimatedTokens;
         NextSpeakerCommand.NotifyCanExecuteChanged();
         BranchFromMessageCommand.NotifyCanExecuteChanged();
         OpenParentConversationCommand.NotifyCanExecuteChanged();
+        GenerateConversationTitleCommand.NotifyCanExecuteChanged();
         RefreshQueuedSends();
+        RefreshJournalBranches();
         if (Messages.LastOrDefault()?.IsAssistant == true)
             _ = RefreshReplySuggestionsAsync();
         // Messages queued earlier go out now that this conversation is on screen and idle.
         _ = DrainQueueAsync(session.Id);
     }
 
-    private async Task RefreshSessionsAsync(long selectedId)
+    private async Task RefreshSessionsAsync(long selectedId, long? onlyForCurrentSessionId = null)
     {
         var sessions = await chatService.GetSessionsAsync();
+        if (onlyForCurrentSessionId is long required &&
+            (_session?.Id != required || SelectedSession?.Id != required)) return;
         _suppressSessionSelection = true;
         Sessions.Clear();
         foreach (var session in sessions) Sessions.Add(session);
         SelectedSession = Sessions.FirstOrDefault(x => x.Id == selectedId);
         _suppressSessionSelection = false;
+        RefreshJournalBranches();
     }
 
     private void SetSelectedSession(long id)
@@ -1271,53 +1355,91 @@ public partial class ChatViewModel(
 
     /// Sending during generation is allowed on purpose: the message joins the queue instead of being
     /// swallowed by a disabled button.
-    private bool CanSend() => HasProviderConfiguration &&
+    private bool CanSend() => HasProviderConfiguration && !IsSessionLoading && !_isDeletingSession &&
                               (!string.IsNullOrWhiteSpace(InputText) || PendingImagePaths.Count > 0);
-    private bool CanStop() => IsGenerating;
-    private bool CanCreateChat() => !IsGenerating;
-    private bool CanGenerateNextSpeaker() => !IsGenerating && IsGroupChat &&
+    private bool CanStop() => IsGenerating || IsGroupPerformanceRunning;
+    private bool CanCreateChat() => CanModifyConversation;
+    private bool CanGenerateNextSpeaker() => CanModifyConversation && IsGroupChat &&
                                              HasProviderConfiguration && GroupMembers.Count >= 2;
 
     partial void OnSelectedSessionChanged(ChatSession? value)
     {
         if (_suppressSessionSelection || value is null || value.Id == _session?.Id) return;
-        if (IsGenerating)
+        _titleCancellation?.Cancel();
+        if (IsGenerating || _isDeletingSession)
         {
             if (_session is not null) SetSelectedSession(_session.Id);
             return;
         }
+        StopGroupPerformance();
         _ = LoadSessionSafelyAsync(value);
     }
 
     private async Task LoadSessionSafelyAsync(ChatSession session)
     {
+        using var navigation = BeginSessionNavigation();
         try
         {
             var stored = await chatService.GetSessionAsync(session.Id);
             if (stored is null)
             {
-                if (_session is not null) SetSelectedSession(_session.Id);
+                if (SelectedSession?.Id == session.Id && _session is not null)
+                    SetSelectedSession(_session.Id);
                 return;
             }
             if (SelectedSession?.Id != session.Id) return;
-            await LoadSessionAsync(stored);
-            ErrorMessage = null;
+            await LoadSessionAsync(stored, requireSelectedSession: true);
+            if (SelectedSession?.Id == session.Id) ErrorMessage = null;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Loading chat session failed.");
-            ErrorMessage = "加载聊天记录失败。";
+            if (SelectedSession?.Id == session.Id) ErrorMessage = "加载聊天记录失败。";
         }
     }
 
     private async Task RefreshTokenEstimateAsync()
     {
-        EstimatedPromptTokens = _session is null ? 0 : await GetTokenEstimateAsync(_session);
+        var session = _session;
+        var tokens = session is null ? 0 : await GetTokenEstimateAsync(session);
+        if (_session?.Id == session?.Id) EstimatedPromptTokens = tokens;
     }
+
+    private async Task RefreshAutomaticSummaryAfterMessageChangeAsync(ChatSession session)
+    {
+        if (session.SummaryIsManual || (session.SummaryCoveredCount <= 0 &&
+            !session.Summary.StartsWith(ConversationSummaryService.Header, StringComparison.Ordinal))) return;
+        // Navigation may have reloaded this session, or the writer may have saved a manual recap.
+        var stored = await chatService.GetSessionAsync(session.Id);
+        if (stored is null) return;
+        if (!stored.SummaryIsManual && (stored.SummaryCoveredCount > 0 ||
+            stored.Summary.StartsWith(ConversationSummaryService.Header, StringComparison.Ordinal)))
+            await chatService.RebuildStorySummaryAsync(stored);
+        session.Summary = stored.Summary;
+        session.SummaryCoveredCount = stored.SummaryCoveredCount;
+        session.SummaryIsManual = stored.SummaryIsManual;
+        ApplyStorySummaryToCurrentSession(session);
+    }
+
+    private bool ApplyStorySummaryToCurrentSession(ChatSession session)
+    {
+        if (_session?.Id != session.Id || SelectedSession?.Id != session.Id) return false;
+        // Returning to the same conversation can replace its model while the rebuild is pending.
+        _session.Summary = session.Summary;
+        _session.SummaryCoveredCount = session.SummaryCoveredCount;
+        _session.SummaryIsManual = session.SummaryIsManual;
+        StorySummary = session.Summary;
+        RefreshStorySummaryState();
+        return true;
+    }
+
+    // Context menus can still hold a bubble after navigation or deletion has replaced the list.
+    private bool IsCurrentMessage([NotNullWhen(true)] ChatMessageViewModel? message) => message is not null &&
+        _session?.Id == message.Model.ChatSessionId && Messages.Contains(message);
 
     private async Task UpdateCharacterStatusAsync(ChatMessage message, CancellationToken cancellationToken = default)
     {
-        if (_session is null || !IsCharacterStatusPluginEnabled) return;
+        if (_session is null || message.ChatSessionId != _session.Id || !IsCharacterStatusPluginEnabled) return;
         var characterId = message.SpeakerCharacterId ?? _session.CharacterId;
         if (characterId is long id)
             await characterStatusService.UpdateAsync(_session, id, message.Id, cancellationToken);
@@ -1329,9 +1451,10 @@ public partial class ChatViewModel(
         _ = Application.Current.Dispatcher.InvokeAsync(RefreshCharacterStatusPluginAsync);
     }
 
-    private async Task<int> GetTokenEstimateAsync(ChatSession session)
+    private async Task<int> GetTokenEstimateAsync(
+        ChatSession session, IReadOnlyList<ChatMessage>? loadedMessages = null)
     {
-        try { return (await chatService.GetPromptPreviewAsync(session)).EstimatedTokens; }
+        try { return (await chatService.GetPromptPreviewAsync(session, loadedMessages)).EstimatedTokens; }
         catch { return 0; }
     }
 
@@ -1344,7 +1467,9 @@ public partial class ChatViewModel(
     /// Drafts reach the database when typing pauses rather than on every keystroke.
     private void ScheduleDraftFlush()
     {
-        if (_session?.Id is not long sessionId) return;
+        // While navigation is pending the box belongs to the incoming conversation. Persist it once
+        // that conversation owns the composer, keeping the outgoing draft at its original snapshot.
+        if (IsSessionLoading || _session?.Id is not long sessionId) return;
         var flushId = Interlocked.Increment(ref _draftFlushId);
         var draft = DraftStore.Capture(InputText, PendingImagePaths);
         _ = FlushDraftWhenIdleAsync(flushId, sessionId, draft);
@@ -1368,17 +1493,24 @@ public partial class ChatViewModel(
     }
     partial void OnIsGeneratingChanged(bool value)
     {
+        if (value) _titleCancellation?.Cancel();
+        OnPropertyChanged(nameof(CanModifyConversation));
+        ContinueLastReplyCommand.NotifyCanExecuteChanged();
+        GenerateConversationTitleCommand.NotifyCanExecuteChanged();
         SendCommand.NotifyCanExecuteChanged();
         StopCommand.NotifyCanExecuteChanged();
         NewChatCommand.NotifyCanExecuteChanged();
         NextSpeakerCommand.NotifyCanExecuteChanged();
         BranchFromMessageCommand.NotifyCanExecuteChanged();
         OpenParentConversationCommand.NotifyCanExecuteChanged();
+        RefreshGroupPerformanceCommands();
     }
     partial void OnHasProviderConfigurationChanged(bool value)
     {
+        GenerateConversationTitleCommand.NotifyCanExecuteChanged();
         SendCommand.NotifyCanExecuteChanged();
         NextSpeakerCommand.NotifyCanExecuteChanged();
+        RefreshGroupPerformanceCommands();
     }
-    partial void OnIsGroupChatChanged(bool value) => NextSpeakerCommand.NotifyCanExecuteChanged();
+    partial void OnIsGroupChatChanged(bool value) => RefreshGroupPerformanceCommands();
 }

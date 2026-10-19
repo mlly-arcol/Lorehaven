@@ -1,4 +1,6 @@
-# NativeTavern design QA
+# Lorehaven design QA
+
+This report records verification before the Lorehaven rename; evidence retains the original executable name.
 
 ## Scope and evidence
 

@@ -11,6 +11,13 @@ namespace NativeTavern.Services;
 public sealed partial class PluginService
 {
     public const string CharacterStatusCapability = "character-status-v1";
+    public const string PromptResourcesCapability = "prompt-resources-v1";
+    public const string DiceRandomTablesCapability = "dice-random-tables-v1";
+    public const string StoryTimelineCapability = "story-timeline-v1";
+    private static readonly HashSet<string> SupportedCapabilities = new(StringComparer.OrdinalIgnoreCase)
+    {
+        CharacterStatusCapability, PromptResourcesCapability, DiceRandomTablesCapability, StoryTimelineCapability
+    };
     private const long MaxPackageBytes = 100L * 1024 * 1024;
     private const long MaxExpandedBytes = 500L * 1024 * 1024;
     private const int MaxEntries = 2_000;
@@ -48,7 +55,7 @@ public sealed partial class PluginService
         }
     }
 
-    public async Task<IReadOnlyList<InstalledPlugin>> GetInstalledAsync()
+    public async Task<IReadOnlyList<InstalledPlugin>> GetInstalledAsync(bool validateContents = false)
     {
         await InitializeAsync();
         var states = await ReadStatesAsync();
@@ -68,19 +75,34 @@ public sealed partial class PluginService
                     logger.LogWarning("Ignoring plugin whose directory does not match its id: {PluginDirectory}", directory);
                     continue;
                 }
-                plugins.Add(new InstalledPlugin
+                string? validationError = null;
+                if (validateContents)
                 {
-                    Manifest = manifest,
-                    DirectoryPath = directory,
-                    IsEnabled = !states.TryGetValue(manifest.Id, out var enabled) || enabled
-                });
+                    try { await ValidatePackageContentsAsync(manifest, directory); }
+                    catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
+                    {
+                        validationError = ex.Message;
+                        logger.LogWarning(ex, "Invalid data for plugin {PluginId}.", manifest.Id);
+                    }
+                }
+                plugins.Add(CreateInstalledPlugin(manifest, directory,
+                    states.IsReadable &&
+                    (!states.Values.TryGetValue(manifest.Id, out var enabled) || enabled), validationError));
             }
-            catch (Exception ex) when (ex is JsonException or InvalidDataException or IOException)
+            catch (Exception ex) when (ex is JsonException or InvalidDataException or IOException or UnauthorizedAccessException)
             {
                 logger.LogWarning(ex, "Ignoring invalid plugin at {PluginDirectory}", directory);
             }
         }
         return plugins.OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+    }
+
+    public async Task<string?> GetStateWarningAsync()
+    {
+        await InitializeAsync();
+        return (await ReadStatesAsync()).IsReadable
+            ? null
+            : "插件状态文件 .state.json 已损坏或无法读取，所有插件已临时停用。请在插件目录恢复此文件后刷新。";
     }
 
     public async Task<IReadOnlyList<MarketplacePlugin>> GetCatalogAsync()
@@ -94,7 +116,7 @@ public sealed partial class PluginService
             if (catalog.FormatVersion != 1) throw new InvalidDataException("不支持此插件商城目录版本。");
             var installed = (await GetInstalledAsync()).Select(x => x.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
             return (catalog.Plugins ?? [])
-                .Where(x => IsValidId(x.Id) && !string.IsNullOrWhiteSpace(x.Name))
+                .Where(x => x is not null && IsValidId(x.Id) && !string.IsNullOrWhiteSpace(x.Name))
                 .Select(x =>
                 {
                     x.Id ??= string.Empty;
@@ -135,6 +157,7 @@ public sealed partial class PluginService
             staging = Path.Combine(root, ".staging-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(staging);
             ExtractArchive(archive, staging);
+            await ValidatePackageContentsAsync(manifest, staging);
             var destination = Path.Combine(root, manifest.Id);
             EnsureDirectChild(destination);
             if (Directory.Exists(destination))
@@ -156,7 +179,10 @@ public sealed partial class PluginService
             if (backup is not null) TryDeleteDirectory(backup);
             logger.LogInformation("Installed plugin {PluginId} version {PluginVersion}", manifest.Id, manifest.Version);
             PluginsChanged?.Invoke();
-            return new InstalledPlugin { Manifest = manifest, DirectoryPath = destination, IsEnabled = true };
+            var states = await ReadStatesAsync();
+            return CreateInstalledPlugin(manifest, destination,
+                states.IsReadable &&
+                (!states.Values.TryGetValue(manifest.Id, out var enabled) || enabled));
         }
         finally
         {
@@ -173,7 +199,7 @@ public sealed partial class PluginService
         if (expectedHash is null || expectedHash.Length != 64 || !expectedHash.All(Uri.IsHexDigit))
             throw new InvalidDataException("商城插件缺少有效的 SHA-256 校验值。");
 
-        var temporary = Path.Combine(Path.GetTempPath(), "NativeTavern-plugin-" + Guid.NewGuid().ToString("N") + ".ntplugin");
+        var temporary = Path.Combine(Path.GetTempPath(), "Lorehaven-plugin-" + Guid.NewGuid().ToString("N") + ".ntplugin");
         try
         {
             using var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead);
@@ -220,7 +246,15 @@ public sealed partial class PluginService
         {
             var directory = GetPluginDirectory(pluginId);
             if (!Directory.Exists(directory)) throw new DirectoryNotFoundException("找不到已安装插件。");
-            var states = await ReadStatesAsync();
+            var states = RequireWritableStates(await ReadStatesAsync());
+            if (enabled)
+            {
+                var manifest = await ReadManifestAsync(Path.Combine(directory, "plugin.json"));
+                ValidateManifest(manifest);
+                if (!string.Equals(manifest.Id, pluginId, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("插件目录与清单 ID 不一致。");
+                await ValidatePackageContentsAsync(manifest, directory);
+            }
             states[pluginId] = enabled;
             await WriteJsonAtomicAsync(statePath, states);
             logger.LogInformation("Plugin {PluginId} enabled state changed to {Enabled}", pluginId, enabled);
@@ -235,11 +269,35 @@ public sealed partial class PluginService
         try
         {
             var directory = GetPluginDirectory(pluginId);
-            if (Directory.Exists(directory)) Directory.Delete(directory, true);
-            var states = await ReadStatesAsync();
-            if (states.Remove(pluginId)) await WriteJsonAtomicAsync(statePath, states);
+            var states = RequireWritableStates(await ReadStatesAsync());
+            string? pendingDeletion = null;
+            if (Directory.Exists(directory))
+            {
+                pendingDeletion = Path.Combine(root, ".pending-delete-" + Guid.NewGuid().ToString("N"));
+                Directory.Move(directory, pendingDeletion);
+            }
+            try
+            {
+                if (states.Remove(pluginId)) await WriteJsonAtomicAsync(statePath, states);
+            }
+            catch (Exception stateError)
+            {
+                if (pendingDeletion is not null && Directory.Exists(pendingDeletion))
+                {
+                    try { Directory.Move(pendingDeletion, directory); }
+                    catch (Exception restoreError) when (restoreError is IOException or UnauthorizedAccessException)
+                    {
+                        logger.LogError(restoreError,
+                            "Could not restore plugin {PluginId} after uninstall state update failed.", pluginId);
+                        throw new IOException($"卸载未完成，插件目录保留在 {pendingDeletion}。请恢复后重试。",
+                            new AggregateException(stateError, restoreError));
+                    }
+                }
+                throw;
+            }
             logger.LogInformation("Uninstalled plugin {PluginId}", pluginId);
-            PluginsChanged?.Invoke();
+            try { PluginsChanged?.Invoke(); }
+            finally { if (pendingDeletion is not null) TryDeleteDirectory(pendingDeletion); }
         }
         finally { gate.Release(); }
     }
@@ -260,21 +318,32 @@ public sealed partial class PluginService
             throw new InvalidDataException("插件路径不安全。");
     }
 
-    private async Task<Dictionary<string, bool>> ReadStatesAsync()
+    private async Task<PluginStates> ReadStatesAsync()
     {
-        if (!File.Exists(statePath)) return new(StringComparer.OrdinalIgnoreCase);
         try
         {
             await using var stream = File.OpenRead(statePath);
             var values = await JsonSerializer.DeserializeAsync<Dictionary<string, bool>>(stream, JsonDefaults.Options);
-            return new Dictionary<string, bool>(values ?? [], StringComparer.OrdinalIgnoreCase);
+            if (values is null) throw new InvalidDataException("插件状态文件内容为空。");
+            return new(new Dictionary<string, bool>(values, StringComparer.OrdinalIgnoreCase), true);
         }
-        catch (JsonException ex)
+        catch (FileNotFoundException)
         {
-            logger.LogWarning(ex, "Plugin state file is invalid; defaults will be used.");
-            return new(StringComparer.OrdinalIgnoreCase);
+            return new(new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase), true);
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidDataException or ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            logger.LogWarning(ex, "Plugin state file is invalid or unreadable; all plugins will be disabled until it is repaired.");
+            return new(new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase), false);
         }
     }
+
+    private static Dictionary<string, bool> RequireWritableStates(PluginStates states) =>
+        states.IsReadable
+            ? states.Values
+            : throw new InvalidDataException("插件状态文件 .state.json 已损坏或无法读取。所有插件已暂时停用；请先恢复此文件，再修改或卸载插件。");
+
+    private sealed record PluginStates(Dictionary<string, bool> Values, bool IsReadable);
 
     private static async Task<PluginManifest> ReadManifestAsync(string path)
     {
@@ -309,7 +378,7 @@ public sealed partial class PluginService
                 throw new InvalidDataException("最低应用版本格式无效。");
             var applicationVersion = Helpers.AppVersion.Current;
             if (minimumVersion > applicationVersion)
-                throw new InvalidDataException($"此插件需要 NativeTavern {minimumVersion} 或更高版本。");
+                throw new InvalidDataException($"此插件需要 Lorehaven {minimumVersion} 或更高版本。");
         }
         manifest.Id ??= string.Empty;
         manifest.Name ??= string.Empty;
@@ -320,15 +389,48 @@ public sealed partial class PluginService
         manifest.Capabilities ??= [];
         if (manifest.Description.Length > 2_000 || manifest.Author.Length > 120)
             throw new InvalidDataException("插件清单文字过长。");
-        if (manifest.Permissions.Count > 50 || manifest.Permissions.Any(x => x.Length > 80))
-            throw new InvalidDataException("插件声明了过多或过长的权限。");
-        if (manifest.Capabilities.Count > 20 || manifest.Capabilities.Any(x => x.Length > 80))
-            throw new InvalidDataException("插件声明了过多或过长的能力。");
+        if (manifest.Permissions.Count > 50)
+            throw new InvalidDataException("插件声明的权限不能超过 50 项。");
+        if (manifest.Permissions.Any(string.IsNullOrWhiteSpace))
+            throw new InvalidDataException("插件权限不能包含空白项。");
+        if (manifest.Permissions.Any(x => x.Length > 80))
+            throw new InvalidDataException("插件权限文字不能超过 80 个字符。");
+        if (manifest.Capabilities.Count > 20)
+            throw new InvalidDataException("插件声明的能力不能超过 20 项。");
+        if (manifest.Capabilities.Any(string.IsNullOrWhiteSpace))
+            throw new InvalidDataException("插件能力不能包含空白项。");
+        if (manifest.Capabilities.Any(x => x.Length > 80))
+            throw new InvalidDataException("插件能力名称不能超过 80 个字符。");
     }
 
+    public static bool IsSupportedCapability(string capability) => SupportedCapabilities.Contains(capability);
+
+    public async Task<IReadOnlyList<InstalledPlugin>> GetEnabledPluginsAsync(string capability) =>
+        !IsSupportedCapability(capability)
+            ? []
+            : (await GetInstalledAsync(validateContents: true)).Where(x => x.IsEnabled &&
+                x.ValidationError is null &&
+                x.Manifest.Capabilities.Contains(capability, StringComparer.OrdinalIgnoreCase)).ToArray();
+
     public async Task<bool> IsCapabilityEnabledAsync(string capability) =>
-        (await GetInstalledAsync()).Any(x => x.IsEnabled &&
-            x.Manifest.Capabilities.Contains(capability, StringComparer.OrdinalIgnoreCase));
+        (await GetEnabledPluginsAsync(capability)).Count > 0;
+
+    private static InstalledPlugin CreateInstalledPlugin(
+        PluginManifest manifest, string directory, bool enabled, string? validationError = null) => new()
+    {
+        Manifest = manifest,
+        DirectoryPath = directory,
+        IsEnabled = enabled,
+        UnsupportedCapabilities = manifest.Capabilities.Where(x => !IsSupportedCapability(x)).ToArray(),
+        SupportedCapabilityCount = manifest.Capabilities.Count(IsSupportedCapability),
+        ValidationError = validationError
+    };
+
+    private static async Task ValidatePackageContentsAsync(PluginManifest manifest, string directory)
+    {
+        await PluginPromptResourceService.ValidatePackageDirectoryAsync(manifest, directory);
+        await DiceTableService.ValidatePackageDirectoryAsync(manifest, directory);
+    }
 
     private static bool IsValidId(string? id) => !string.IsNullOrWhiteSpace(id) && IdPattern().IsMatch(id);
 

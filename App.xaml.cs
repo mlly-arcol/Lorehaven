@@ -35,24 +35,25 @@ public partial class App : Application
         DispatcherUnhandledException += (_, args) =>
         {
             logger.LogCritical(args.Exception, "Unhandled UI exception.");
-            MessageBox.Show("NativeTavern 遇到未处理错误，详情已写入日志。", "NativeTavern", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show("Lorehaven 遇到未处理错误，详情已写入日志。", "Lorehaven", MessageBoxButton.OK, MessageBoxImage.Error);
             args.Handled = true;
         };
         try
         {
-            logger.LogInformation("NativeTavern {Version} starting.", DisplayVersion);
+            logger.LogInformation("Lorehaven {Version} starting.", DisplayVersion);
             await _services.GetRequiredService<DatabaseInitializer>().InitializeAsync();
             var storedSettings = await _services.GetRequiredService<SettingsService>().LoadAsync();
             _services.GetRequiredService<LocalizationService>().SetLanguage(storedSettings.LanguageCode);
-            ThemeService.Apply(storedSettings.ThemeMode);
-            var login = new Views.LoginWindow();
-            if (login.ShowDialog() != true)
+            ThemeService.Apply(storedSettings.ThemeMode, storedSettings.ThemeStyle);
+            var welcome = new Views.WelcomeWindow();
+            if (welcome.ShowDialog() != true)
             {
                 Shutdown();
                 return;
             }
             var viewModel = _services.GetRequiredService<MainViewModel>();
             await viewModel.InitializeAsync();
+            viewModel.ShowChatCommand.Execute(null);
             var window = _services.GetRequiredService<MainWindow>();
             MainWindow = window;
             ShutdownMode = ShutdownMode.OnMainWindowClose;
@@ -84,7 +85,7 @@ public partial class App : Application
         catch (Exception ex)
         {
             logger.LogCritical(ex, "Application startup failed.");
-            MessageBox.Show("NativeTavern 启动失败，请查看日志：" + Environment.NewLine + AppPaths.LogFile, "NativeTavern", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show("Lorehaven 启动失败，请查看日志：" + Environment.NewLine + AppPaths.LogFile, "Lorehaven", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(-1);
         }
     }
@@ -111,6 +112,9 @@ public partial class App : Application
         services.AddSingleton<ChatAttachmentRepository>();
         services.AddSingleton<CharacterStatusRepository>();
         services.AddSingleton<CharacterMemoryRepository>();
+        services.AddSingleton<StoryTimelineRepository>();
+        services.AddSingleton<PluginResourceSelectionRepository>();
+        services.AddSingleton<PluginRandomResultRepository>();
         services.AddSingleton<RegexScriptRepository>();
         services.AddSingleton<ISecretProtector, DpapiSecretProtector>();
         services.AddSingleton<SettingsService>();
@@ -125,7 +129,11 @@ public partial class App : Application
         services.AddSingleton<CharacterStatusService>();
         services.AddSingleton<RegexScriptService>();
         services.AddSingleton<PromptResourceService>();
+        services.AddSingleton<PluginPromptResourceService>();
+        services.AddSingleton<DiceTableService>();
+        services.AddSingleton<StoryTimelineService>();
         services.AddSingleton<ReplySuggestionService>();
+        services.AddSingleton<ConversationTitleService>();
         services.AddSingleton<CharacterMemoryService>();
         services.AddSingleton<GlobalHotkeyService>();
         services.AddSingleton<TrayService>();

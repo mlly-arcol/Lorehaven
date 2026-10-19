@@ -4,9 +4,9 @@
         Title="对话设置" Width="560" Height="520"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-        ShowInTaskbar="False" PreviewKeyDown="Dialog_OnPreviewKeyDown">
+        ShowInTaskbar="False" PreviewKeyDown="Dialog_OnPreviewKeyDown" Foreground="{DynamicResource TextBrush}">
  <Grid Margin="18">
-  <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+  <Border Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
           CornerRadius="16" Padding="26,24,26,22">
    <Border.Effect><DropShadowEffect BlurRadius="24" ShadowDepth="6" Opacity="0.20" Color="#32000000"/></Border.Effect>
    <Grid>
@@ -14,10 +14,10 @@
      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
-    <Border Width="42" Height="4" CornerRadius="2" Background="{StaticResource TextBrush}" HorizontalAlignment="Left"/>
-    <TextBlock Grid.Row="1" Text="对话设置" Margin="0,17,0,0" FontSize="21" FontWeight="SemiBold"/>
+    <Border Width="48" Height="2" CornerRadius="1" Background="{DynamicResource TealBrush}" HorizontalAlignment="Left"/>
+    <TextBlock Grid.Row="1" Text="对话设置" Margin="0,17,0,0" FontFamily="Georgia, Cambria, SimSun" FontSize="23" FontWeight="SemiBold"/>
     <TextBlock Grid.Row="2" Text="调整仅用于当前对话的可选上下文。" Margin="0,7,0,0"
-               Foreground="{StaticResource MutedTextBrush}" FontSize="12"/>
+               Foreground="{DynamicResource MutedTextBrush}" FontSize="12"/>
 
     <Grid Grid.Row="3" Margin="0,22,0,0">
      <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
@@ -43,7 +43,7 @@
       <ComboBox x:Name="SessionGroupBox" Width="150" Height="30" IsEditable="True"
                 ItemsSource="{Binding SessionGroups}" ToolTip="把相关对话放在一起，切换列表里会跟着标题显示"/>
       <TextBlock Text="留空即取消分组" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center"
-                 Foreground="{StaticResource MutedTextBrush}"/>
+                 Foreground="{DynamicResource MutedTextBrush}"/>
      </StackPanel>
     </Grid>
     <TextBox x:Name="AuthorNoteBox" Grid.Row="5" AcceptsReturn="True" TextWrapping="Wrap"

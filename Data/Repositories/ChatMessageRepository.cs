@@ -33,6 +33,39 @@ public sealed class ChatMessageRepository(DatabaseConnectionFactory connectionFa
         return rows.Select(x => x.ToModel()).ToList();
     }
 
+    public async Task<int> CountBySessionAsync(long chatSessionId)
+    {
+        await using var connection = connectionFactory.CreateConnection();
+        return await connection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM ChatMessages WHERE ChatSessionId=@chatSessionId",
+            new { chatSessionId });
+    }
+
+    /// <summary>Reads a positional slice for the rolling summary without materializing the whole chat.</summary>
+    public async Task<IReadOnlyList<ChatMessage>> GetBySessionRangeAsync(
+        long chatSessionId, int offset, int count)
+    {
+        if (offset < 0) throw new ArgumentOutOfRangeException(nameof(offset));
+        if (count <= 0) return [];
+        await using var connection = connectionFactory.CreateConnection();
+        var rows = await connection.QueryAsync<MessageRow>(
+            "SELECT * FROM ChatMessages WHERE ChatSessionId=@chatSessionId ORDER BY Id " +
+            "LIMIT @count OFFSET @offset",
+            new { chatSessionId, offset, count });
+        return rows.Select(x => x.ToModel()).ToList();
+    }
+
+    /// <summary>Returns the newest messages in conversation order without loading older history.</summary>
+    public async Task<IReadOnlyList<ChatMessage>> GetRecentBySessionAsync(long chatSessionId, int limit)
+    {
+        if (limit <= 0) return [];
+        await using var connection = connectionFactory.CreateConnection();
+        var rows = await connection.QueryAsync<MessageRow>(
+            "SELECT * FROM ChatMessages WHERE ChatSessionId=@chatSessionId ORDER BY Id DESC LIMIT @limit",
+            new { chatSessionId, limit });
+        return rows.Reverse().Select(x => x.ToModel()).ToList();
+    }
+
     public async Task DeleteBySessionAsync(long chatSessionId)
     {
         await using var connection = connectionFactory.CreateConnection();
@@ -54,31 +87,41 @@ public sealed class ChatMessageRepository(DatabaseConnectionFactory connectionFa
     }
 
     /// <summary>
-    /// Case-insensitive substring search across every conversation. The wildcard characters in the
+    /// Case-insensitive substring search, optionally limited to one conversation or pinned messages.
+    /// Empty queries browse the latest messages only when a scope or filter is supplied. Wildcards in the
     /// query are escaped so a literal percent or underscore does not widen the match. A leading
     /// "@名字" token narrows the search to what that character said, by name or by alias.
     /// </summary>
-    public async Task<IReadOnlyList<MessageSearchResult>> SearchAsync(string query, int limit = 50)
+    public async Task<IReadOnlyList<MessageSearchResult>> SearchAsync(
+        string query, int limit = 50, long? sessionId = null, bool pinnedOnly = false)
     {
         var (term, speaker) = SplitSpeakerFilter(query);
-        if (term.Length == 0 && speaker.Length == 0) return [];
+        if (term.Length == 0 && speaker.Length == 0 && sessionId is null && !pinnedOnly) return [];
         if (limit <= 0) return [];
-        var escaped = term
-            .Replace("\\", "\\\\")
-            .Replace("%", "\\%")
-            .Replace("_", "\\_");
         await using var connection = connectionFactory.CreateConnection();
         var rows = await connection.QueryAsync<SearchRow>(
             "SELECT m.Id AS MessageId, m.ChatSessionId, s.Title AS SessionTitle, m.Role, m.Content, m.CreatedAt, " +
             "COALESCE((SELECT x.Name FROM Characters x WHERE x.Id = " + SpeakerIdExpression + "), '') AS Speaker " +
             "FROM ChatMessages m JOIN ChatSessions s ON s.Id = m.ChatSessionId " +
             @"WHERE (@term='' OR m.Content LIKE @pattern ESCAPE '\') " +
+            "AND (@sessionId IS NULL OR m.ChatSessionId=@sessionId) " +
+            "AND (@pinnedOnly=0 OR m.IsPinned=1) " +
             @"AND (@speaker='' OR EXISTS (SELECT 1 FROM Characters x WHERE x.Id = " + SpeakerIdExpression + " " +
-            @"AND (x.Name = @speaker OR (',' || replace(replace(x.Aliases, '，', ','), ' ', '') || ',') LIKE '%,' || @speaker || ',%'))) " +
+            @"AND (x.Name = @speaker OR (',' || replace(replace(x.Aliases, '，', ','), ' ', '') || ',') LIKE @speakerPattern ESCAPE '\'))) " +
             "ORDER BY m.Id DESC LIMIT @limit",
-            new { term, speaker, pattern = $"%{escaped}%", limit });
+            new
+            {
+                term, speaker, pattern = $"%{EscapeLike(term)}%",
+                speakerPattern = $"%,{EscapeLike(speaker)},%", limit, sessionId,
+                pinnedOnly = pinnedOnly ? 1 : 0,
+            });
         return rows.Select(x => x.ToResult(term)).ToList();
     }
+
+    private static string EscapeLike(string value) => value
+        .Replace("\\", "\\\\")
+        .Replace("%", "\\%")
+        .Replace("_", "\\_");
 
     /// <summary>The character that actually spoke: user turns have none, group turns carry their own.</summary>
     private const string SpeakerIdExpression =
@@ -131,7 +174,7 @@ public sealed class ChatMessageRepository(DatabaseConnectionFactory connectionFa
         {
             const int context = 48;
             var flat = content.ReplaceLineEndings(" ").Trim();
-            var index = flat.IndexOf(term, StringComparison.OrdinalIgnoreCase);
+            var index = term.Length == 0 ? -1 : flat.IndexOf(term, StringComparison.OrdinalIgnoreCase);
             if (index < 0) return flat.Length <= 120 ? flat : flat[..120] + "…";
             var start = Math.Max(0, index - context);
             var end = Math.Min(flat.Length, index + term.Length + context);

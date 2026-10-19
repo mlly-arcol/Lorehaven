@@ -6,7 +6,7 @@ namespace NativeTavern.ViewModels;
 
 public partial class ChatMessageViewModel : ObservableObject
 {
-    private const string DefaultAvatarPath = "/NativeTavern;component/Assets/NativeTavern.png";
+    private const string DefaultAvatarPath = "/Lorehaven;component/Assets/NativeTavern.png";
     private readonly string _assistantName;
     private readonly string _assistantAvatarPath;
 
@@ -22,7 +22,7 @@ public partial class ChatMessageViewModel : ObservableObject
         _content = model.Content;
         _editText = model.Content;
         _swipeCount = swipeCount;
-        _assistantName = string.IsNullOrWhiteSpace(assistantName) ? "NativeTavern" : assistantName;
+        _assistantName = string.IsNullOrWhiteSpace(assistantName) ? "Lorehaven" : assistantName;
         _assistantAvatarPath = !string.IsNullOrWhiteSpace(assistantAvatarPath) && File.Exists(assistantAvatarPath)
             ? assistantAvatarPath : DefaultAvatarPath;
         CharacterId = characterId;
@@ -35,6 +35,8 @@ public partial class ChatMessageViewModel : ObservableObject
     public string RoleLabel => Role == ChatRole.User ? "You" : _assistantName;
     public string AssistantAvatarPath => IsAssistant ? _assistantAvatarPath : string.Empty;
     public bool HasAssistantAvatar => IsAssistant;
+    public bool HasCustomAssistantAvatar => IsAssistant && _assistantAvatarPath != DefaultAvatarPath;
+    public string DisplayTime => Model.CreatedAt.ToLocalTime().ToString("HH:mm");
     public long? CharacterId { get; }
     public bool IsPinned
     {

@@ -16,7 +16,7 @@ public partial class PluginsView : UserControl
     {
         var dialog = new OpenFileDialog
         {
-            Filter = "NativeTavern plugins|*.ntplugin;*.zip|All files|*.*",
+            Filter = "Lorehaven plugins|*.ntplugin;*.zip|All files|*.*",
             Multiselect = false
         };
         if (dialog.ShowDialog() == true && ViewModel is not null)

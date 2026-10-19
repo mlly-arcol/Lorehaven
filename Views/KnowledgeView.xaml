@@ -3,93 +3,89 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
  <UserControl.Resources>
   <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-   <Style.Triggers>
-    <DataTrigger Binding="{Binding IsBusy}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger>
-   </Style.Triggers>
+   <Style.Triggers><DataTrigger Binding="{Binding IsBusy}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger></Style.Triggers>
+  </Style>
+  <Style x:Key="BusyPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
+   <Style.Triggers><DataTrigger Binding="{Binding IsBusy}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger></Style.Triggers>
+  </Style>
+  <Style x:Key="DocumentItemStyle" TargetType="ListBoxItem">
+   <Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/>
+   <Setter Property="Margin" Value="0,0,0,10"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem">
+    <Border x:Name="DocumentItem" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16,15"><ContentPresenter/></Border>
+    <ControlTemplate.Triggers>
+     <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="DocumentItem" Property="Background" Value="{DynamicResource HoverBrush}"/></Trigger>
+     <Trigger Property="IsSelected" Value="True"><Setter TargetName="DocumentItem" Property="Background" Value="{DynamicResource AccentTintBgBrush}"/><Setter TargetName="DocumentItem" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
+     <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="DocumentItem" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
+    </ControlTemplate.Triggers>
+   </ControlTemplate></Setter.Value></Setter>
   </Style>
  </UserControl.Resources>
  <Grid Margin="30,26,30,22" AllowDrop="True" Drop="KnowledgeView_OnDrop">
-  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <DockPanel Margin="0,0,0,18">
-   <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-    <Button Content="Import Documents" Click="Import_OnClick"/>
-    <Button Content="Delete" Click="Delete_OnClick" Margin="0">
-     <Button.Style>
-      <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-       <Setter Property="Background" Value="{StaticResource DangerSoftBgBrush}"/>
-       <Setter Property="Foreground" Value="{StaticResource DangerTextBrush}"/>
-       <Setter Property="BorderBrush" Value="{StaticResource DangerSoftBorderBrush}"/>
-       <Style.Triggers>
-        <DataTrigger Binding="{Binding SelectedDocument}" Value="{x:Null}"><Setter Property="IsEnabled" Value="False"/></DataTrigger>
-       </Style.Triggers>
-      </Style>
-     </Button.Style>
-    </Button>
-   </StackPanel>
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Grid Margin="0,0,0,20">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <Border BorderBrush="{DynamicResource TealBrush}" BorderThickness="2,0,0,0" Padding="15,0,0,0" Margin="0,0,18,0">
    <StackPanel>
-    <TextBlock Text="Knowledge Base" Style="{StaticResource PageTitleStyle}"/>
-    <TextBlock Text="Drop or import TXT, Markdown and PDF files. Context sharing stays disabled until enabled in Settings."
-               Foreground="{StaticResource MutedTextBrush}" Margin="0,5,0,0"/>
+    <TextBlock Text="REFERENCE LIBRARY" Style="{StaticResource PageKickerStyle}" Margin="0,0,0,5"/>
+    <StackPanel Orientation="Horizontal"><TextBlock Text="Knowledge Base" Style="{StaticResource PageTitleStyle}"/><Border Style="{StaticResource CountBadgeStyle}" VerticalAlignment="Center" Margin="12,0,0,0"><TextBlock Text="{Binding Documents.Count}" Foreground="{DynamicResource AccentTintTextBrush}" FontWeight="SemiBold"/></Border></StackPanel>
+    <TextBlock Text="Give your stories a library of useful references." Style="{StaticResource PageSubtitleStyle}" Margin="0,5,0,0"/>
    </StackPanel>
-  </DockPanel>
-
-  <Border Grid.Row="1" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="14">
-   <Grid>
-    <ListBox x:Name="DocumentList" ItemsSource="{Binding Documents}" SelectedItem="{Binding SelectedDocument}" Background="Transparent" BorderThickness="0">
-     <ListBox.ItemTemplate>
-      <DataTemplate>
-       <Grid Margin="8">
-        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
-        <StackPanel>
-         <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
-         <TextBlock Text="{Binding ManagedPath}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextTrimming="CharacterEllipsis"/>
-        </StackPanel>
-        <TextBlock Grid.Column="1" Text="{Binding ChunkCount, StringFormat={}{0} chunks}" VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}"/>
-        <TextBlock Grid.Column="2" Text="Enabled" VerticalAlignment="Center" HorizontalAlignment="Right">
-         <TextBlock.Style>
-          <Style TargetType="TextBlock">
-           <Setter Property="Opacity" Value="0.35"/>
-           <Style.Triggers>
-            <DataTrigger Binding="{Binding IsEnabled}" Value="True"><Setter Property="Opacity" Value="1"/><Setter Property="Foreground" Value="{StaticResource SuccessTextBrush}"/></DataTrigger>
-           </Style.Triggers>
-          </Style>
-         </TextBlock.Style>
-        </TextBlock>
-       </Grid>
-      </DataTemplate>
-     </ListBox.ItemTemplate>
-    </ListBox>
-    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-     <StackPanel.Style>
-      <Style TargetType="StackPanel">
-       <Style.Triggers>
-        <DataTrigger Binding="{Binding HasItems, ElementName=DocumentList}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
-       </Style.Triggers>
-      </Style>
-     </StackPanel.Style>
-     <TextBlock Text="No documents yet" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-     <TextBlock Text="Drop TXT, Markdown or PDF files here, or choose Import Documents."
-                Style="{StaticResource PageSubtitleStyle}" TextAlignment="Center" Margin="0,7,0,16"/>
-     <Button Content="Import Documents" Click="Import_OnClick" HorizontalAlignment="Center" Margin="0"/>
+   </Border>
+   <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+    <Button Content="Import Documents" Click="Import_OnClick" Style="{StaticResource BusyPrimaryButtonStyle}"/>
+    <Button Content="Delete" Click="Delete_OnClick" Margin="0"><Button.Style><Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+     <Setter Property="Background" Value="{DynamicResource DangerSoftBgBrush}"/><Setter Property="Foreground" Value="{DynamicResource DangerTextBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource DangerSoftBorderBrush}"/>
+     <Style.Triggers><DataTrigger Binding="{Binding SelectedDocument}" Value="{x:Null}"><Setter Property="IsEnabled" Value="False"/></DataTrigger><DataTrigger Binding="{Binding IsBusy}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger></Style.Triggers>
+    </Style></Button.Style></Button>
+   </StackPanel>
+  </Grid>
+  <Border Grid.Row="1" Style="{StaticResource HelperPanelStyle}" Margin="0,0,0,18">
+   <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <TextBlock Text="&#xE8D4;" FontFamily="Segoe Fluent Icons" FontSize="20" Foreground="{DynamicResource TealTintTextBrush}" VerticalAlignment="Center"/>
+    <StackPanel Grid.Column="1" Margin="4,0,16,0"><TextBlock Text="Your references, on your terms" FontWeight="SemiBold" Foreground="{DynamicResource TealTintTextBrush}"/><TextBlock Text="Context sharing stays disabled until enabled in Settings." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource MutedTextBrush}" Margin="0,4,0,0"/></StackPanel>
+    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+     <Border Background="{DynamicResource PanelBrush}" CornerRadius="6" Padding="8,4" Margin="0,0,5,0"><TextBlock Text="TXT" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource TealTintTextBrush}"/></Border>
+     <Border Background="{DynamicResource PanelBrush}" CornerRadius="6" Padding="8,4" Margin="0,0,5,0"><TextBlock Text="MD" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource TealTintTextBrush}"/></Border>
+     <Border Background="{DynamicResource PanelBrush}" CornerRadius="6" Padding="8,4"><TextBlock Text="PDF" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource TealTintTextBrush}"/></Border>
     </StackPanel>
    </Grid>
   </Border>
-
-  <Grid Grid.Row="2" Margin="0,14,0,0">
-   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-   <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-   <Button Content="Enable / Disable Selected" Click="Toggle_OnClick">
-    <Button.Style>
-     <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-      <Style.Triggers>
-       <DataTrigger Binding="{Binding SelectedDocument}" Value="{x:Null}"><Setter Property="IsEnabled" Value="False"/></DataTrigger>
-      </Style.Triggers>
-     </Style>
-    </Button.Style>
-   </Button>
-   <TextBlock Grid.Column="1" Text="{Binding StatusMessage}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}" Margin="8,0,0,0" AutomationProperties.LiveSetting="Polite"/>
-   <ProgressBar Grid.Row="1" Grid.ColumnSpan="2" Height="3" Margin="0,10,0,0" IsIndeterminate="True"
-                Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" AutomationProperties.Name="文档处理进度"/>
+  <Border Grid.Row="2" Style="{StaticResource SurfaceBorderStyle}" Padding="16">
+   <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+    <DockPanel Margin="3,0,3,14"><TextBlock Text="Imported documents" Style="{StaticResource SectionTitleStyle}"/><TextBlock Text="Select a document to manage its availability" Foreground="{DynamicResource SubtleTextBrush}" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"/></DockPanel>
+    <Grid Grid.Row="1">
+     <ListBox x:Name="DocumentList" ItemsSource="{Binding Documents}" SelectedItem="{Binding SelectedDocument}" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource DocumentItemStyle}" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+      <ListBox.ItemTemplate><DataTemplate><Grid>
+       <Grid.ColumnDefinitions><ColumnDefinition Width="52"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+       <Border Width="40" Height="44" Background="{DynamicResource AccentTintBgBrush}" BorderBrush="{DynamicResource AccentTintBorderBrush}" BorderThickness="1" CornerRadius="10" VerticalAlignment="Center"><TextBlock Text="&#xE8A5;" FontFamily="Segoe Fluent Icons" FontSize="21" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+       <StackPanel Grid.Column="1" Margin="2,0,16,0" VerticalAlignment="Center"><TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding ManagedPath}" Foreground="{DynamicResource SubtleTextBrush}" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,5,0,0"/></StackPanel>
+       <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
+        <Border CornerRadius="7" Padding="9,4" HorizontalAlignment="Right"><Border.Style><Style TargetType="Border"><Setter Property="Background" Value="{DynamicResource NeutralBgBrush}"/><Style.Triggers><DataTrigger Binding="{Binding IsEnabled}" Value="True"><Setter Property="Background" Value="{DynamicResource TealTintBgBrush}"/></DataTrigger></Style.Triggers></Style></Border.Style>
+         <Grid>
+          <TextBlock Text="Enabled" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TealTintTextBrush}" Visibility="{Binding IsEnabled, Converter={StaticResource BoolToVisibility}}"/>
+          <TextBlock Text="Disabled" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource MutedTextBrush}" Visibility="{Binding IsEnabled, Converter={StaticResource InverseBoolToVisibility}}"/>
+         </Grid>
+        </Border>
+        <TextBlock Text="{Binding ChunkCount, StringFormat={}{0} chunks}" FontSize="11" HorizontalAlignment="Right" Margin="0,6,0,0" Foreground="{DynamicResource SubtleTextBrush}"/>
+       </StackPanel>
+      </Grid></DataTemplate></ListBox.ItemTemplate>
+     </ListBox>
+     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="410">
+      <StackPanel.Style><Style TargetType="StackPanel"><Style.Triggers><DataTrigger Binding="{Binding HasItems, ElementName=DocumentList}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></StackPanel.Style>
+      <Border Width="76" Height="76" Background="{DynamicResource AccentTintBgBrush}" BorderBrush="{DynamicResource AccentTintBorderBrush}" BorderThickness="1" CornerRadius="22" HorizontalAlignment="Center" Margin="0,0,0,18"><TextBlock Text="&#xE8B7;" FontFamily="Segoe Fluent Icons" FontSize="30" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+      <TextBlock Text="No documents yet" FontFamily="Georgia, Cambria, SimSun" FontSize="21" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+      <TextBlock Text="Drop TXT, Markdown or PDF files here, or choose Import Documents." Style="{StaticResource PageSubtitleStyle}" TextAlignment="Center" Margin="0,9,0,20"/>
+      <Button Content="Import Documents" Click="Import_OnClick" Style="{StaticResource BusyPrimaryButtonStyle}" HorizontalAlignment="Center" Margin="0"/>
+     </StackPanel>
+    </Grid>
+   </Grid>
+  </Border>
+  <Grid Grid.Row="3" Margin="0,14,0,0">
+   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+   <Button Content="Enable / Disable Selected" Click="Toggle_OnClick"><Button.Style><Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Style.Triggers><DataTrigger Binding="{Binding SelectedDocument}" Value="{x:Null}"><Setter Property="IsEnabled" Value="False"/></DataTrigger><DataTrigger Binding="{Binding IsBusy}" Value="True"><Setter Property="IsEnabled" Value="False"/></DataTrigger></Style.Triggers></Style></Button.Style></Button>
+   <TextBlock Grid.Column="1" Text="{Binding StatusMessage}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource MutedTextBrush}" Margin="8,0,0,0" AutomationProperties.LiveSetting="Polite"/>
+   <ProgressBar Grid.Row="1" Grid.ColumnSpan="2" Height="3" Margin="0,10,0,0" IsIndeterminate="True" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" AutomationProperties.Name="文档处理进度"/>
   </Grid>
  </Grid>
 </UserControl>
